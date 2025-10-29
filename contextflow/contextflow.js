@@ -1,115 +1,265 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Brain, Zap, Calendar, MessageSquare, TrendingUp, Clock, Plus, X, Send } from 'lucide-react';
+import { Brain, Zap, Calendar, MessageSquare, TrendingUp, Clock, Plus, X, Send, Edit2, Trash2, Download, Upload, Search, LogOut } from 'lucide-react';
+import { supabase, getUser, signOut, fetchContexts, createContext, updateContext, deleteContext, searchContexts, fetchInsights, createInsight } from './lib/supabase';
+import Auth from './components/Auth';
 
 const ContextFlow = () => {
+  // Authentication state
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  // UI state
   const [activeView, setActiveView] = useState('dashboard');
-  const [contexts, setContexts] = useState([
-    {
-      id: 1,
-      type: 'project',
-      title: 'Q4 Product Launch',
-      summary: 'Coordinating with design and engineering teams',
-      connections: ['Sarah Chen', 'Product roadmap', 'Marketing plan'],
-      lastUpdated: '2 hours ago',
-      priority: 'high'
-    },
-    {
-      id: 2,
-      type: 'personal',
-      title: 'Learning Spanish',
-      summary: 'Mentioned 3 months ago, no recent progress',
-      connections: ['Language goals', 'Travel plans'],
-      lastUpdated: '3 months ago',
-      priority: 'medium'
-    },
-    {
-      id: 3,
-      type: 'professional',
-      title: 'Sarah Chen - Climate Tech',
-      summary: 'Met at Denver conference, discussed collaboration',
-      connections: ['Networking', 'Climate initiatives'],
-      lastUpdated: '2 weeks ago',
-      priority: 'medium'
-    }
-  ]);
-
-  const [insights, setInsights] = useState([
-    {
-      id: 1,
-      type: 'opportunity',
-      title: 'Reconnection Opportunity',
-      message: 'Sarah from Denver conference is in your area. You mentioned wanting to reconnect about climate tech collaboration.',
-      timestamp: '10 minutes ago',
-      actionable: true
-    },
-    {
-      id: 2,
-      type: 'reminder',
-      title: 'Long-term Goal Check',
-      message: 'Your Spanish learning goal has been inactive for 3 months. There are language exchange meetups this week.',
-      timestamp: '1 hour ago',
-      actionable: true
-    },
-    {
-      id: 3,
-      type: 'conflict',
-      title: 'Schedule Optimization',
-      message: 'Three meetings tomorrow could be consolidated to create 90 minutes of focused work time.',
-      timestamp: '3 hours ago',
-      actionable: true
-    }
-  ]);
-
   const [showAddContext, setShowAddContext] = useState(false);
-  const [newContext, setNewContext] = useState({ title: '', description: '' });
+  const [editingContext, setEditingContext] = useState(null);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [chatMessages, setChatMessages] = useState([]);
-  const [chatInput, setChatInput] = useState('');
 
-  // Simulate OpenAI API call
-  const generateInsight = async (context) => {
-    setIsGenerating(true);
-    
-    // In production, this would call:
-    // const response = await fetch('/api/generate-insight', {
-    //   method: 'POST',
-    //   headers: { 'Content-Type': 'application/json' },
-    //   body: JSON.stringify({ context })
-    // });
-    
-    // Simulated response for demo
-    setTimeout(() => {
-      const newInsight = {
-        id: insights.length + 1,
-        type: 'analysis',
-        title: `New insight for: ${context.title}`,
-        message: `AI-generated analysis would appear here based on your context patterns and connections.`,
-        timestamp: 'Just now',
-        actionable: false
-      };
-      setInsights([newInsight, ...insights]);
-      setIsGenerating(false);
-    }, 1500);
+  // Data state
+  const [contexts, setContexts] = useState([]);
+  const [insights, setInsights] = useState([]);
+  const [chatMessages, setChatMessages] = useState([]);
+
+  // Form state
+  const [newContext, setNewContext] = useState({
+    title: '',
+    summary: '',
+    type: 'custom',
+    priority: 'medium',
+    connections: []
+  });
+  const [chatInput, setChatInput] = useState('');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filteredContexts, setFilteredContexts] = useState([]);
+
+  // Check authentication on mount
+  useEffect(() => {
+    checkUser();
+
+    // Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  // Load data when user is authenticated
+  useEffect(() => {
+    if (user) {
+      loadContexts();
+      loadInsights();
+    }
+  }, [user]);
+
+  // Update filtered contexts when search term or contexts change
+  useEffect(() => {
+    if (searchTerm.trim()) {
+      const filtered = contexts.filter(context =>
+        context.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        context.summary?.toLowerCase().includes(searchTerm.toLowerCase())
+      );
+      setFilteredContexts(filtered);
+    } else {
+      setFilteredContexts(contexts);
+    }
+  }, [searchTerm, contexts]);
+
+  const checkUser = async () => {
+    try {
+      const currentUser = await getUser();
+      setUser(currentUser);
+    } catch (error) {
+      console.error('Error checking user:', error);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleAddContext = () => {
-    if (newContext.title.trim()) {
-      const context = {
-        id: contexts.length + 1,
-        type: 'custom',
-        title: newContext.title,
-        summary: newContext.description,
-        connections: [],
-        lastUpdated: 'Just now',
-        priority: 'medium'
-      };
-      setContexts([context, ...contexts]);
-      setNewContext({ title: '', description: '' });
-      setShowAddContext(false);
-      generateInsight(context);
+  const loadContexts = async () => {
+    if (!user) return;
+
+    try {
+      const { data, error } = await fetchContexts(user.id);
+      if (error) throw error;
+      setContexts(data || []);
+    } catch (error) {
+      console.error('Error loading contexts:', error);
     }
+  };
+
+  const loadInsights = async () => {
+    if (!user) return;
+
+    try {
+      const { data, error } = await fetchInsights(user.id);
+      if (error) throw error;
+      setInsights(data || []);
+    } catch (error) {
+      console.error('Error loading insights:', error);
+    }
+  };
+
+  const handleSignOut = async () => {
+    await signOut();
+    setUser(null);
+    setContexts([]);
+    setInsights([]);
+    setChatMessages([]);
+  };
+
+  const generateInsight = async (context) => {
+    if (!user) return;
+
+    setIsGenerating(true);
+    try {
+      const response = await fetch('/api/generate-insight', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ context, userContexts: contexts })
+      });
+
+      const data = await response.json();
+
+      // Save insight to database
+      const { data: savedInsight, error } = await createInsight(user.id, data.insight);
+      if (!error && savedInsight) {
+        setInsights([savedInsight, ...insights]);
+      }
+    } catch (error) {
+      console.error('Error generating insight:', error);
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const handleAddContext = async () => {
+    if (!user || !newContext.title.trim()) return;
+
+    try {
+      const { data, error } = await createContext(user.id, newContext);
+      if (error) throw error;
+
+      if (data) {
+        setContexts([data, ...contexts]);
+        setNewContext({
+          title: '',
+          summary: '',
+          type: 'custom',
+          priority: 'medium',
+          connections: []
+        });
+        setShowAddContext(false);
+        generateInsight(data);
+      }
+    } catch (error) {
+      console.error('Error adding context:', error);
+    }
+  };
+
+  const handleEditContext = (context) => {
+    setEditingContext(context);
+    setNewContext({
+      title: context.title,
+      summary: context.summary,
+      type: context.type,
+      priority: context.priority,
+      connections: context.connections || []
+    });
+  };
+
+  const handleUpdateContext = async () => {
+    if (!editingContext || !newContext.title.trim()) return;
+
+    try {
+      const { data, error } = await updateContext(editingContext.id, {
+        title: newContext.title,
+        summary: newContext.summary,
+        type: newContext.type,
+        priority: newContext.priority,
+        connections: newContext.connections
+      });
+
+      if (error) throw error;
+
+      if (data) {
+        setContexts(contexts.map(c => c.id === data.id ? data : c));
+        setEditingContext(null);
+        setNewContext({
+          title: '',
+          summary: '',
+          type: 'custom',
+          priority: 'medium',
+          connections: []
+        });
+      }
+    } catch (error) {
+      console.error('Error updating context:', error);
+    }
+  };
+
+  const handleDeleteContext = async (contextId) => {
+    if (!confirm('Are you sure you want to delete this context?')) return;
+
+    try {
+      const { error } = await deleteContext(contextId);
+      if (error) throw error;
+
+      setContexts(contexts.filter(c => c.id !== contextId));
+    } catch (error) {
+      console.error('Error deleting context:', error);
+    }
+  };
+
+  const handleExportData = () => {
+    const exportData = {
+      contexts,
+      insights,
+      exportedAt: new Date().toISOString()
+    };
+
+    const dataStr = JSON.stringify(exportData, null, 2);
+    const dataBlob = new Blob([dataStr], { type: 'application/json' });
+    const url = URL.createObjectURL(dataBlob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `contextflow-export-${new Date().toISOString().split('T')[0]}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImportData = (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      try {
+        const importedData = JSON.parse(e.target.result);
+
+        if (importedData.contexts && Array.isArray(importedData.contexts)) {
+          // Import contexts to database
+          for (const context of importedData.contexts) {
+            await createContext(user.id, {
+              title: context.title,
+              summary: context.summary,
+              type: context.type,
+              priority: context.priority,
+              connections: context.connections || []
+            });
+          }
+
+          // Reload contexts
+          await loadContexts();
+          alert('Data imported successfully!');
+        }
+      } catch (error) {
+        console.error('Error importing data:', error);
+        alert('Error importing data. Please check the file format.');
+      }
+    };
+    reader.readAsText(file);
   };
 
   const handleSendMessage = async () => {
@@ -174,15 +324,28 @@ const ContextFlow = () => {
     );
   };
 
-  const ContextCard = ({ context }) => {
+  const ContextCard = ({ context, onEdit, onDelete }) => {
     const priorityColors = {
       high: 'bg-red-500/10 text-red-400 border-red-500/20',
       medium: 'bg-amber-500/10 text-amber-400 border-amber-500/20',
       low: 'bg-zinc-500/10 text-zinc-400 border-zinc-500/20'
     };
 
+    const formatDate = (dateString) => {
+      const date = new Date(dateString);
+      const now = new Date();
+      const diff = now - date;
+      const hours = Math.floor(diff / (1000 * 60 * 60));
+      const days = Math.floor(hours / 24);
+
+      if (hours < 1) return 'Just now';
+      if (hours < 24) return `${hours} hour${hours > 1 ? 's' : ''} ago`;
+      if (days < 7) return `${days} day${days > 1 ? 's' : ''} ago`;
+      return date.toLocaleDateString();
+    };
+
     return (
-      <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-5 hover:border-zinc-700 transition-all cursor-pointer">
+      <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-5 hover:border-zinc-700 transition-all group">
         <div className="flex items-start justify-between mb-3">
           <div className="flex-1">
             <div className="flex items-center gap-2 mb-2">
@@ -193,20 +356,51 @@ const ContextFlow = () => {
             </div>
             <p className="text-zinc-400 text-sm">{context.summary}</p>
           </div>
+          <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+            <button
+              onClick={() => onEdit(context)}
+              className="p-2 hover:bg-zinc-800 rounded-lg transition-colors"
+              title="Edit context"
+            >
+              <Edit2 size={16} className="text-zinc-400 hover:text-white" />
+            </button>
+            <button
+              onClick={() => onDelete(context.id)}
+              className="p-2 hover:bg-zinc-800 rounded-lg transition-colors"
+              title="Delete context"
+            >
+              <Trash2 size={16} className="text-zinc-400 hover:text-red-400" />
+            </button>
+          </div>
         </div>
         <div className="flex items-center justify-between">
           <div className="flex flex-wrap gap-1.5">
-            {context.connections.map((conn, idx) => (
+            {context.connections && context.connections.map((conn, idx) => (
               <span key={idx} className="text-xs bg-zinc-800 text-zinc-300 px-2 py-1 rounded">
                 {conn}
               </span>
             ))}
           </div>
-          <span className="text-xs text-zinc-500 whitespace-nowrap ml-3">{context.lastUpdated}</span>
+          <span className="text-xs text-zinc-500 whitespace-nowrap ml-3">
+            {formatDate(context.last_updated)}
+          </span>
         </div>
       </div>
     );
   };
+
+  // Show auth screen if not logged in
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-black flex items-center justify-center">
+        <div className="text-white">Loading...</div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <Auth onAuthSuccess={setUser} />;
+  }
 
   return (
     <div className="min-h-screen bg-black text-white">
@@ -223,7 +417,7 @@ const ContextFlow = () => {
                 <p className="text-xs text-zinc-500">Personal AI Memory Layer</p>
               </div>
             </div>
-            <nav className="flex items-center gap-1">
+            <nav className="flex items-center gap-2">
               <button
                 onClick={() => setActiveView('dashboard')}
                 className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
@@ -247,6 +441,30 @@ const ContextFlow = () => {
                 }`}
               >
                 Chat
+              </button>
+              <div className="w-px h-6 bg-zinc-800 mx-2" />
+              <button
+                onClick={handleExportData}
+                className="p-2 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-lg transition-colors"
+                title="Export data"
+              >
+                <Download size={18} />
+              </button>
+              <label className="p-2 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-lg transition-colors cursor-pointer" title="Import data">
+                <Upload size={18} />
+                <input
+                  type="file"
+                  accept=".json"
+                  onChange={handleImportData}
+                  className="hidden"
+                />
+              </label>
+              <button
+                onClick={handleSignOut}
+                className="p-2 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-lg transition-colors"
+                title="Sign out"
+              >
+                <LogOut size={18} />
               </button>
             </nav>
           </div>
@@ -290,8 +508,18 @@ const ContextFlow = () => {
               <h2 className="text-xl font-semibold mb-4">Priority Contexts</h2>
               <div className="space-y-3">
                 {contexts.filter(c => c.priority === 'high').map(context => (
-                  <ContextCard key={context.id} context={context} />
+                  <ContextCard
+                    key={context.id}
+                    context={context}
+                    onEdit={handleEditContext}
+                    onDelete={handleDeleteContext}
+                  />
                 ))}
+                {contexts.filter(c => c.priority === 'high').length === 0 && (
+                  <div className="text-center py-8 text-zinc-500">
+                    No high priority contexts yet.
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -302,7 +530,17 @@ const ContextFlow = () => {
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-2xl font-bold">Context Library</h2>
               <button
-                onClick={() => setShowAddContext(true)}
+                onClick={() => {
+                  setShowAddContext(true);
+                  setEditingContext(null);
+                  setNewContext({
+                    title: '',
+                    summary: '',
+                    type: 'custom',
+                    priority: 'medium',
+                    connections: []
+                  });
+                }}
                 className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg font-medium flex items-center gap-2 transition-colors"
               >
                 <Plus size={18} />
@@ -310,44 +548,115 @@ const ContextFlow = () => {
               </button>
             </div>
 
-            {showAddContext && (
+            {/* Search bar */}
+            <div className="mb-6">
+              <div className="relative">
+                <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-zinc-500" size={18} />
+                <input
+                  type="text"
+                  placeholder="Search contexts..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full bg-zinc-900 border border-zinc-800 rounded-lg pl-12 pr-4 py-3 text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500 transition-colors"
+                />
+              </div>
+            </div>
+
+            {(showAddContext || editingContext) && (
               <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-6 mb-6">
                 <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-lg font-semibold">New Context</h3>
+                  <h3 className="text-lg font-semibold">
+                    {editingContext ? 'Edit Context' : 'New Context'}
+                  </h3>
                   <button
-                    onClick={() => setShowAddContext(false)}
+                    onClick={() => {
+                      setShowAddContext(false);
+                      setEditingContext(null);
+                      setNewContext({
+                        title: '',
+                        summary: '',
+                        type: 'custom',
+                        priority: 'medium',
+                        connections: []
+                      });
+                    }}
                     className="text-zinc-400 hover:text-white transition-colors"
                   >
                     <X size={20} />
                   </button>
                 </div>
-                <input
-                  type="text"
-                  placeholder="Context title..."
-                  value={newContext.title}
-                  onChange={(e) => setNewContext({ ...newContext, title: e.target.value })}
-                  className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-3 mb-3 text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500 transition-colors"
-                />
-                <textarea
-                  placeholder="Add details about this context..."
-                  value={newContext.description}
-                  onChange={(e) => setNewContext({ ...newContext, description: e.target.value })}
-                  className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-3 mb-4 text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500 transition-colors h-24 resize-none"
-                />
+
+                <div className="space-y-3">
+                  <input
+                    type="text"
+                    placeholder="Context title..."
+                    value={newContext.title}
+                    onChange={(e) => setNewContext({ ...newContext, title: e.target.value })}
+                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-3 text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500 transition-colors"
+                  />
+
+                  <textarea
+                    placeholder="Add details about this context..."
+                    value={newContext.summary}
+                    onChange={(e) => setNewContext({ ...newContext, summary: e.target.value })}
+                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-3 text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500 transition-colors h-24 resize-none"
+                  />
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-sm text-zinc-400 mb-2">Type</label>
+                      <select
+                        value={newContext.type}
+                        onChange={(e) => setNewContext({ ...newContext, type: e.target.value })}
+                        className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500 transition-colors"
+                      >
+                        <option value="custom">Custom</option>
+                        <option value="project">Project</option>
+                        <option value="personal">Personal</option>
+                        <option value="professional">Professional</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm text-zinc-400 mb-2">Priority</label>
+                      <select
+                        value={newContext.priority}
+                        onChange={(e) => setNewContext({ ...newContext, priority: e.target.value })}
+                        className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500 transition-colors"
+                      >
+                        <option value="low">Low</option>
+                        <option value="medium">Medium</option>
+                        <option value="high">High</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
                 <button
-                  onClick={handleAddContext}
-                  className="bg-blue-600 hover:bg-blue-700 px-6 py-2 rounded-lg font-medium transition-colors"
+                  onClick={editingContext ? handleUpdateContext : handleAddContext}
+                  className="mt-4 bg-blue-600 hover:bg-blue-700 px-6 py-2 rounded-lg font-medium transition-colors"
                 >
-                  Add Context
+                  {editingContext ? 'Update Context' : 'Add Context'}
                 </button>
               </div>
             )}
 
-            <div className="space-y-3">
-              {contexts.map(context => (
-                <ContextCard key={context.id} context={context} />
-              ))}
-            </div>
+            {filteredContexts.length === 0 ? (
+              <div className="text-center py-12 text-zinc-500">
+                {searchTerm ? 'No contexts found matching your search.' : 'No contexts yet. Add one to get started!'}
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {filteredContexts.map(context => (
+                  <ContextCard
+                    key={context.id}
+                    context={context}
+                    onEdit={handleEditContext}
+                    onDelete={handleDeleteContext}
+                  />
+                ))}
+              </div>
+            )}
           </div>
         )}
 

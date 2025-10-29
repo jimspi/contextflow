@@ -4,6 +4,7 @@ A forward-looking AI product that builds continuous, evolving understanding of y
 
 ## Features
 
+### Core Features
 - **Context Management**: Track and manage all your important contexts (projects, goals, relationships)
 - **AI-Powered Insights**: Automatically generate proactive insights based on your context graph
 - **Smart Connections**: Detect connections between different areas of your life
@@ -11,9 +12,19 @@ A forward-looking AI product that builds continuous, evolving understanding of y
 - **Context-Aware Chat**: Natural conversation with full awareness of your entire context history
 - **Sleek, Contemporary UI**: Modern dark theme with smooth animations and professional design
 
+### New Features ✨
+- **User Authentication**: Secure sign up/sign in with email and password
+- **Data Persistence**: All data saved to Supabase PostgreSQL database
+- **Edit/Delete Contexts**: Full CRUD operations for managing your contexts
+- **Export Data**: Download all your contexts and insights as JSON
+- **Import Data**: Restore or migrate data from JSON files
+- **Search Functionality**: Real-time search across all contexts
+
 ## Tech Stack
 
-- **Frontend**: React with Next.js
+- **Frontend**: React 18 with Next.js 14
+- **Database**: Supabase (PostgreSQL)
+- **Authentication**: Supabase Auth
 - **Styling**: Tailwind CSS
 - **Icons**: Lucide React
 - **AI**: OpenAI GPT-4 API
@@ -63,17 +74,34 @@ Copy all the provided files into their respective locations:
 npm install
 ```
 
-### 5. Set Up Environment Variables
+### 5. Set Up Supabase
+
+**Important**: ContextFlow now requires Supabase for data persistence and authentication.
+
+Follow the detailed guide in [SUPABASE_SETUP.md](./SUPABASE_SETUP.md) to:
+1. Create a Supabase project
+2. Run the database schema
+3. Get your API keys
+4. Configure environment variables
+
+### 6. Set Up Environment Variables
 
 Create a `.env.local` file in the root directory:
 
 ```env
+# OpenAI API Key (optional, for AI insights)
 OPENAI_API_KEY=your_openai_api_key_here
+
+# Supabase Configuration (required)
+NEXT_PUBLIC_SUPABASE_URL=https://xxxxxxxxxxxxx.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
 ```
+
+Copy from `.env.local.example` and fill in your actual values.
 
 **Important**: Never commit this file to version control. It's already in `.gitignore`.
 
-### 6. Run Development Server
+### 7. Run Development Server
 
 ```bash
 npm run dev
@@ -119,21 +147,32 @@ In your Vercel project settings:
 
 ## Usage
 
+### Authentication
+- **Sign Up**: Create a new account with email and password
+- **Sign In**: Access your existing account
+- **Sign Out**: Use the logout button in the header
+
 ### Dashboard View
 - View recent AI-generated insights
 - See statistics on contexts and connections
 - Monitor high-priority contexts
+- Edit or delete contexts directly from cards
 
 ### Contexts View
-- Browse all your contexts
-- Add new contexts
-- View connections and relationships
-- Track last update times
+- **Browse**: View all your contexts with real-time search
+- **Add**: Create new contexts with title, summary, type, and priority
+- **Edit**: Click the edit icon on any context card to modify it
+- **Delete**: Click the delete icon to remove contexts (with confirmation)
+- **Search**: Use the search bar to find contexts by title or summary
+
+### Data Management
+- **Export**: Click the download icon in the header to export all data as JSON
+- **Import**: Click the upload icon to import contexts from a JSON file
 
 ### Chat View
 - Have context-aware conversations
 - Ask questions about your contexts
-- Get personalized recommendations
+- Get personalized recommendations based on your full context history
 
 ## API Integration
 
@@ -168,17 +207,26 @@ The modular structure makes it easy to add:
 - Integration with external APIs
 - Data persistence (database)
 
+## Recently Added ✅
+
+- ✅ Database integration (Supabase PostgreSQL)
+- ✅ User authentication (Supabase Auth)
+- ✅ Data persistence across sessions
+- ✅ Edit/delete contexts
+- ✅ Export/import functionality
+- ✅ Search across contexts
+
 ## Future Enhancements
 
 Consider adding:
-- Database integration (PostgreSQL, MongoDB)
-- User authentication (NextAuth.js)
 - Real-time notifications
 - Calendar integration
 - Email scanning
 - Mobile app
 - Browser extension
 - Webhook integrations
+- Social authentication (Google, GitHub)
+- Two-factor authentication
 
 ## Performance
 
@@ -189,10 +237,12 @@ Consider adding:
 
 ## Security
 
-- API keys stored in environment variables
-- No sensitive data in client-side code
-- Server-side API calls only
-- HTTPS enforced on Vercel
+- **Row Level Security (RLS)**: Supabase RLS ensures users can only access their own data
+- **Secure Authentication**: Password hashing and secure session management via Supabase Auth
+- **API Keys**: All keys stored in environment variables, never in client code
+- **Server-side API calls**: AI features use server-side API routes only
+- **HTTPS**: Enforced on Vercel deployment
+- **Data Isolation**: Each user's contexts, insights, and messages are completely isolated
 
 ## License
 
