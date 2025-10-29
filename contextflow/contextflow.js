@@ -267,20 +267,50 @@ const ContextFlow = () => {
   };
 
   const handleSendMessage = async () => {
-    if (chatInput.trim()) {
-      const userMessage = { role: 'user', content: chatInput, timestamp: new Date() };
-      setChatMessages([...chatMessages, userMessage]);
-      setChatInput('');
-      
-      // Simulate AI response
-      setTimeout(() => {
-        const aiMessage = {
-          role: 'assistant',
-          content: 'This is where ContextFlow would provide intelligent responses based on your entire context graph. In production, this connects to OpenAI API with your full context as system prompt.',
-          timestamp: new Date()
-        };
-        setChatMessages(prev => [...prev, aiMessage]);
-      }, 1000);
+    if (!chatInput.trim() || !user) return;
+
+    const userMessage = { role: 'user', content: chatInput, timestamp: new Date() };
+    const updatedMessages = [...chatMessages, userMessage];
+    setChatMessages(updatedMessages);
+    setChatInput('');
+
+    try {
+      // Call OpenAI API with user's context
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: updatedMessages.map(m => ({ role: m.role, content: m.content })),
+          userContexts: contexts
+        })
+      });
+
+      const data = await response.json();
+
+      if (data.error) {
+        throw new Error(data.error);
+      }
+
+      const aiMessage = {
+        role: 'assistant',
+        content: data.message,
+        timestamp: new Date()
+      };
+      setChatMessages(prev => [...prev, aiMessage]);
+    } catch (error) {
+      console.error('Error sending message:', error);
+
+      // Show error message to user
+      const errorMessage = {
+        role: 'assistant',
+        content: `Sorry, I encountered an error: ${error.message}. ${
+          error.message.includes('API') || error.message.includes('key')
+            ? 'Please make sure the OPENAI_API_KEY environment variable is set in your Vercel project settings.'
+            : ''
+        }`,
+        timestamp: new Date()
+      };
+      setChatMessages(prev => [...prev, errorMessage]);
     }
   };
 
@@ -481,10 +511,10 @@ const ContextFlow = () => {
           <div>
             {/* Stats */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-              <StatCard icon={Brain} label="Active Contexts" value={contexts.length} trend="+2 this week" />
-              <StatCard icon={Zap} label="Insights Generated" value="47" trend="+12 today" />
-              <StatCard icon={Calendar} label="Connections Made" value="156" trend="+8 this week" />
-              <StatCard icon={Clock} label="Avg Response Time" value="1.2s" trend="-0.3s faster" />
+              <StatCard icon={Brain} label="Active Contexts" value={contexts.length} />
+              <StatCard icon={Zap} label="Insights Generated" value={insights.length} />
+              <StatCard icon={Calendar} label="Connections Made" value={contexts.reduce((acc, ctx) => acc + (ctx.connections?.length || 0), 0)} />
+              <StatCard icon={Clock} label="Chat Messages" value={chatMessages.length} />
             </div>
 
             {/* Recent Insights */}
@@ -493,18 +523,24 @@ const ContextFlow = () => {
                 <h2 className="text-xl font-semibold">Recent Insights</h2>
                 <button
                   onClick={() => generateInsight({ title: 'General', description: 'System analysis' })}
-                  disabled={isGenerating}
+                  disabled={isGenerating || contexts.length === 0}
                   className="text-sm text-blue-400 hover:text-blue-300 font-medium flex items-center gap-1 disabled:opacity-50 transition-colors"
                 >
                   <Zap size={14} />
                   {isGenerating ? 'Generating...' : 'Generate New'}
                 </button>
               </div>
-              <div className="space-y-3">
-                {insights.map(insight => (
-                  <InsightCard key={insight.id} insight={insight} />
-                ))}
-              </div>
+              {insights.length === 0 ? (
+                <div className="text-center py-8 text-zinc-500">
+                  No insights yet. {contexts.length === 0 ? 'Add some contexts first!' : 'Click "Generate New" to create one.'}
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {insights.map(insight => (
+                    <InsightCard key={insight.id} insight={insight} />
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Priority Contexts */}
