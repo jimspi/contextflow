@@ -5,7 +5,9 @@ import { Brain, Zap, Calendar, MessageSquare, TrendingUp, Clock, Plus, X, Send }
 
 const ContextFlow = () => {
   const [activeView, setActiveView] = useState('dashboard');
-  const [contexts, setContexts] = useState([
+
+  // Default contexts to show when localStorage is empty
+  const defaultContexts = [
     {
       id: 1,
       type: 'project',
@@ -33,9 +35,9 @@ const ContextFlow = () => {
       lastUpdated: '2 weeks ago',
       priority: 'medium'
     }
-  ]);
+  ];
 
-  const [insights, setInsights] = useState([
+  const defaultInsights = [
     {
       id: 1,
       type: 'opportunity',
@@ -60,13 +62,64 @@ const ContextFlow = () => {
       timestamp: '3 hours ago',
       actionable: true
     }
-  ]);
+  ];
 
+  const [contexts, setContexts] = useState([]);
+  const [insights, setInsights] = useState([]);
   const [showAddContext, setShowAddContext] = useState(false);
   const [newContext, setNewContext] = useState({ title: '', description: '' });
   const [isGenerating, setIsGenerating] = useState(false);
   const [chatMessages, setChatMessages] = useState([]);
   const [chatInput, setChatInput] = useState('');
+
+  // Load contexts and insights from localStorage on mount
+  useEffect(() => {
+    try {
+      const savedContexts = localStorage.getItem('contextflow_contexts');
+      const savedInsights = localStorage.getItem('contextflow_insights');
+
+      if (savedContexts) {
+        setContexts(JSON.parse(savedContexts));
+      } else {
+        // First time user - show default contexts
+        setContexts(defaultContexts);
+      }
+
+      if (savedInsights) {
+        setInsights(JSON.parse(savedInsights));
+      } else {
+        // First time user - show default insights
+        setInsights(defaultInsights);
+      }
+    } catch (error) {
+      console.error('Error loading from localStorage:', error);
+      // Fallback to defaults if localStorage fails
+      setContexts(defaultContexts);
+      setInsights(defaultInsights);
+    }
+  }, []);
+
+  // Save contexts to localStorage whenever they change
+  useEffect(() => {
+    if (contexts.length > 0) {
+      try {
+        localStorage.setItem('contextflow_contexts', JSON.stringify(contexts));
+      } catch (error) {
+        console.error('Error saving contexts to localStorage:', error);
+      }
+    }
+  }, [contexts]);
+
+  // Save insights to localStorage whenever they change
+  useEffect(() => {
+    if (insights.length > 0) {
+      try {
+        localStorage.setItem('contextflow_insights', JSON.stringify(insights));
+      } catch (error) {
+        console.error('Error saving insights to localStorage:', error);
+      }
+    }
+  }, [insights]);
 
   // Simulate OpenAI API call
   const generateInsight = async (context) => {
