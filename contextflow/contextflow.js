@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Brain, Zap, Calendar, MessageSquare, TrendingUp, Clock, Plus, X, Send } from 'lucide-react';
+import { Brain, Zap, Calendar, MessageSquare, TrendingUp, Clock, Plus, X, Send, Upload, FileText, Folder } from 'lucide-react';
 
 const ContextFlow = () => {
   const [activeView, setActiveView] = useState('dashboard');
@@ -67,31 +67,51 @@ const ContextFlow = () => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [chatMessages, setChatMessages] = useState([]);
   const [chatInput, setChatInput] = useState('');
+  const [showFileUpload, setShowFileUpload] = useState(false);
+  const [uploadedFiles, setUploadedFiles] = useState([]);
+  const [selectedInsight, setSelectedInsight] = useState(null);
+  const [showActionModal, setShowActionModal] = useState(false);
 
-  // Simulate OpenAI API call
+  // Generate insights using OpenAI API
   const generateInsight = async (context) => {
     setIsGenerating(true);
-    
-    // In production, this would call:
-    // const response = await fetch('/api/generate-insight', {
-    //   method: 'POST',
-    //   headers: { 'Content-Type': 'application/json' },
-    //   body: JSON.stringify({ context })
-    // });
-    
-    // Simulated response for demo
-    setTimeout(() => {
+
+    try {
+      const response = await fetch('/api/generate-insight', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          context,
+          userContexts: contexts
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to generate insight');
+      }
+
+      const data = await response.json();
+      const newInsight = {
+        id: insights.length + 1,
+        ...data.insight
+      };
+
+      setInsights([newInsight, ...insights]);
+    } catch (error) {
+      console.error('Error generating insight:', error);
+      // Fallback to a basic insight if API fails
       const newInsight = {
         id: insights.length + 1,
         type: 'analysis',
-        title: `New insight for: ${context.title}`,
-        message: `AI-generated analysis would appear here based on your context patterns and connections.`,
+        title: `Analysis: ${context.title}`,
+        message: `Added new context about ${context.title}. Consider how this connects to your other goals and projects.`,
         timestamp: 'Just now',
         actionable: false
       };
       setInsights([newInsight, ...insights]);
+    } finally {
       setIsGenerating(false);
-    }, 1500);
+    }
   };
 
   const handleAddContext = () => {
@@ -112,12 +132,60 @@ const ContextFlow = () => {
     }
   };
 
+  const handleFileUpload = async (event) => {
+    const files = Array.from(event.target.files);
+
+    if (files.length === 0) return;
+
+    const newFiles = [];
+
+    for (const file of files) {
+      try {
+        const text = await file.text();
+        const fileContext = {
+          id: contexts.length + newFiles.length + 1,
+          type: 'document',
+          title: file.name,
+          summary: text.substring(0, 200) + (text.length > 200 ? '...' : ''),
+          fullContent: text,
+          connections: [],
+          lastUpdated: 'Just now',
+          priority: 'medium',
+          fileInfo: {
+            name: file.name,
+            size: file.size,
+            type: file.type,
+            lastModified: new Date(file.lastModified).toLocaleDateString()
+          }
+        };
+
+        newFiles.push(fileContext);
+        setUploadedFiles(prev => [...prev, file.name]);
+
+        // Generate insight for each uploaded file
+        await generateInsight(fileContext);
+      } catch (error) {
+        console.error(`Error processing file ${file.name}:`, error);
+      }
+    }
+
+    if (newFiles.length > 0) {
+      setContexts([...newFiles, ...contexts]);
+      setShowFileUpload(false);
+    }
+  };
+
+  const handleTakeAction = (insight) => {
+    setSelectedInsight(insight);
+    setShowActionModal(true);
+  };
+
   const handleSendMessage = async () => {
     if (chatInput.trim()) {
       const userMessage = { role: 'user', content: chatInput, timestamp: new Date() };
       setChatMessages([...chatMessages, userMessage]);
       setChatInput('');
-      
+
       // Simulate AI response
       setTimeout(() => {
         const aiMessage = {
@@ -166,7 +234,10 @@ const ContextFlow = () => {
         </div>
         <p className="text-zinc-400 text-sm mb-3">{insight.message}</p>
         {insight.actionable && (
-          <button className="text-xs text-blue-400 hover:text-blue-300 font-medium transition-colors">
+          <button
+            onClick={() => handleTakeAction(insight)}
+            className="text-xs text-blue-400 hover:text-blue-300 font-medium transition-colors"
+          >
             Take Action →
           </button>
         )}
@@ -181,17 +252,36 @@ const ContextFlow = () => {
       low: 'bg-zinc-500/10 text-zinc-400 border-zinc-500/20'
     };
 
+    const formatFileSize = (bytes) => {
+      if (bytes < 1024) return bytes + ' B';
+      if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+      return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+    };
+
     return (
       <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-5 hover:border-zinc-700 transition-all cursor-pointer">
         <div className="flex items-start justify-between mb-3">
           <div className="flex-1">
             <div className="flex items-center gap-2 mb-2">
+              {context.type === 'document' && <FileText size={16} className="text-emerald-400" />}
               <h4 className="text-white font-medium">{context.title}</h4>
               <span className={`text-xs px-2 py-0.5 rounded border ${priorityColors[context.priority]}`}>
                 {context.priority}
               </span>
+              {context.type === 'document' && (
+                <span className="text-xs px-2 py-0.5 rounded border bg-emerald-500/10 text-emerald-400 border-emerald-500/20">
+                  file
+                </span>
+              )}
             </div>
             <p className="text-zinc-400 text-sm">{context.summary}</p>
+            {context.fileInfo && (
+              <div className="mt-2 flex items-center gap-3 text-xs text-zinc-500">
+                <span>{formatFileSize(context.fileInfo.size)}</span>
+                <span>•</span>
+                <span>Modified: {context.fileInfo.lastModified}</span>
+              </div>
+            )}
           </div>
         </div>
         <div className="flex items-center justify-between">
@@ -301,13 +391,22 @@ const ContextFlow = () => {
           <div>
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-2xl font-bold">Context Library</h2>
-              <button
-                onClick={() => setShowAddContext(true)}
-                className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg font-medium flex items-center gap-2 transition-colors"
-              >
-                <Plus size={18} />
-                Add Context
-              </button>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowFileUpload(true)}
+                  className="bg-emerald-600 hover:bg-emerald-700 px-4 py-2 rounded-lg font-medium flex items-center gap-2 transition-colors"
+                >
+                  <Upload size={18} />
+                  Upload Files
+                </button>
+                <button
+                  onClick={() => setShowAddContext(true)}
+                  className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg font-medium flex items-center gap-2 transition-colors"
+                >
+                  <Plus size={18} />
+                  Add Context
+                </button>
+              </div>
             </div>
 
             {showAddContext && (
@@ -340,6 +439,57 @@ const ContextFlow = () => {
                 >
                   Add Context
                 </button>
+              </div>
+            )}
+
+            {showFileUpload && (
+              <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-6 mb-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold">Upload Files</h3>
+                  <button
+                    onClick={() => setShowFileUpload(false)}
+                    className="text-zinc-400 hover:text-white transition-colors"
+                  >
+                    <X size={20} />
+                  </button>
+                </div>
+                <div className="border-2 border-dashed border-zinc-700 rounded-lg p-8 text-center hover:border-zinc-600 transition-colors">
+                  <input
+                    type="file"
+                    id="file-upload"
+                    multiple
+                    accept=".txt,.md,.json,.js,.py,.java,.cpp,.c,.html,.css,.xml,.log"
+                    onChange={handleFileUpload}
+                    className="hidden"
+                  />
+                  <label
+                    htmlFor="file-upload"
+                    className="cursor-pointer flex flex-col items-center gap-3"
+                  >
+                    <div className="bg-zinc-800 p-4 rounded-full">
+                      <Folder size={32} className="text-zinc-400" />
+                    </div>
+                    <div>
+                      <p className="text-white font-medium mb-1">Click to browse files</p>
+                      <p className="text-sm text-zinc-500">
+                        Supports text files, code, markdown, JSON, and logs
+                      </p>
+                    </div>
+                  </label>
+                </div>
+                {uploadedFiles.length > 0 && (
+                  <div className="mt-4">
+                    <p className="text-sm text-zinc-400 mb-2">Recently uploaded:</p>
+                    <div className="space-y-2">
+                      {uploadedFiles.slice(-5).map((fileName, idx) => (
+                        <div key={idx} className="flex items-center gap-2 text-sm text-zinc-300">
+                          <FileText size={14} className="text-emerald-400" />
+                          {fileName}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -405,6 +555,134 @@ const ContextFlow = () => {
           </div>
         )}
       </main>
+
+      {/* Action Modal */}
+      {showActionModal && selectedInsight && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-lg max-w-2xl w-full p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-xl font-semibold text-white">Take Action</h3>
+              <button
+                onClick={() => setShowActionModal(false)}
+                className="text-zinc-400 hover:text-white transition-colors"
+              >
+                <X size={24} />
+              </button>
+            </div>
+
+            <div className="mb-6">
+              <div className="bg-zinc-800 border border-zinc-700 rounded-lg p-4 mb-4">
+                <h4 className="text-white font-medium mb-2">{selectedInsight.title}</h4>
+                <p className="text-zinc-400 text-sm">{selectedInsight.message}</p>
+              </div>
+
+              <div className="space-y-3">
+                <h4 className="text-white font-medium text-sm">Suggested Actions:</h4>
+
+                {selectedInsight.type === 'opportunity' && (
+                  <div className="space-y-2">
+                    <button
+                      onClick={() => {
+                        setActiveView('chat');
+                        setChatInput(`Tell me more about this opportunity: ${selectedInsight.title}`);
+                        setShowActionModal(false);
+                      }}
+                      className="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-3 rounded-lg text-left transition-colors flex items-center justify-between"
+                    >
+                      <span>Discuss in Chat</span>
+                      <MessageSquare size={18} />
+                    </button>
+                    <button className="w-full bg-zinc-800 hover:bg-zinc-700 text-white px-4 py-3 rounded-lg text-left transition-colors flex items-center justify-between">
+                      <span>Add to Calendar</span>
+                      <Calendar size={18} />
+                    </button>
+                    <button className="w-full bg-zinc-800 hover:bg-zinc-700 text-white px-4 py-3 rounded-lg text-left transition-colors flex items-center justify-between">
+                      <span>Create Reminder</span>
+                      <Clock size={18} />
+                    </button>
+                  </div>
+                )}
+
+                {selectedInsight.type === 'reminder' && (
+                  <div className="space-y-2">
+                    <button
+                      onClick={() => {
+                        setActiveView('contexts');
+                        setShowActionModal(false);
+                      }}
+                      className="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-3 rounded-lg text-left transition-colors flex items-center justify-between"
+                    >
+                      <span>View Related Context</span>
+                      <Brain size={18} />
+                    </button>
+                    <button className="w-full bg-zinc-800 hover:bg-zinc-700 text-white px-4 py-3 rounded-lg text-left transition-colors flex items-center justify-between">
+                      <span>Set New Goal</span>
+                      <TrendingUp size={18} />
+                    </button>
+                    <button className="w-full bg-zinc-800 hover:bg-zinc-700 text-white px-4 py-3 rounded-lg text-left transition-colors flex items-center justify-between">
+                      <span>Schedule Time</span>
+                      <Calendar size={18} />
+                    </button>
+                  </div>
+                )}
+
+                {selectedInsight.type === 'conflict' && (
+                  <div className="space-y-2">
+                    <button
+                      onClick={() => {
+                        setActiveView('chat');
+                        setChatInput(`Help me resolve this conflict: ${selectedInsight.title}`);
+                        setShowActionModal(false);
+                      }}
+                      className="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-3 rounded-lg text-left transition-colors flex items-center justify-between"
+                    >
+                      <span>Get AI Suggestions</span>
+                      <MessageSquare size={18} />
+                    </button>
+                    <button className="w-full bg-zinc-800 hover:bg-zinc-700 text-white px-4 py-3 rounded-lg text-left transition-colors flex items-center justify-between">
+                      <span>Reschedule Events</span>
+                      <Calendar size={18} />
+                    </button>
+                  </div>
+                )}
+
+                {selectedInsight.type === 'analysis' && (
+                  <div className="space-y-2">
+                    <button
+                      onClick={() => {
+                        setActiveView('chat');
+                        setChatInput(`Analyze this further: ${selectedInsight.title}`);
+                        setShowActionModal(false);
+                      }}
+                      className="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-3 rounded-lg text-left transition-colors flex items-center justify-between"
+                    >
+                      <span>Deep Dive in Chat</span>
+                      <MessageSquare size={18} />
+                    </button>
+                    <button
+                      onClick={() => {
+                        setActiveView('contexts');
+                        setShowActionModal(false);
+                      }}
+                      className="w-full bg-zinc-800 hover:bg-zinc-700 text-white px-4 py-3 rounded-lg text-left transition-colors flex items-center justify-between"
+                    >
+                      <span>View All Contexts</span>
+                      <Brain size={18} />
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <button
+              onClick={() => setShowActionModal(false)}
+              className="w-full bg-zinc-800 hover:bg-zinc-700 text-zinc-300 px-4 py-2 rounded-lg transition-colors"
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
