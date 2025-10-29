@@ -6,11 +6,26 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
+  // Validate API key
+  if (!process.env.OPENAI_API_KEY) {
+    return res.status(500).json({
+      error: 'OpenAI API key not configured',
+      details: 'Please set OPENAI_API_KEY in your environment variables'
+    });
+  }
+
   const { messages, userContexts } = req.body;
+
+  // Validate request body
+  if (!messages || !Array.isArray(messages)) {
+    return res.status(400).json({
+      error: 'Missing or invalid field: messages must be an array'
+    });
+  }
 
   try {
     // Build system message with user's full context
-    const contextSummary = userContexts?.map(ctx => 
+    const contextSummary = userContexts?.map(ctx =>
       `- ${ctx.title}: ${ctx.summary} (Priority: ${ctx.priority}, Last updated: ${ctx.lastUpdated})`
     ).join('\n');
 
@@ -40,9 +55,13 @@ Use this context to provide personalized, relevant responses. Reference specific
     });
 
     const data = await response.json();
-    
+
     if (data.error) {
       throw new Error(data.error.message);
+    }
+
+    if (!data.choices || !data.choices[0] || !data.choices[0].message) {
+      throw new Error('Invalid response from OpenAI API');
     }
 
     return res.status(200).json({
@@ -51,9 +70,9 @@ Use this context to provide personalized, relevant responses. Reference specific
     });
   } catch (error) {
     console.error('OpenAI API Error:', error);
-    return res.status(500).json({ 
+    return res.status(500).json({
       error: 'Failed to process chat message',
-      details: error.message 
+      details: error.message
     });
   }
 }

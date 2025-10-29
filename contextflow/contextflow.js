@@ -67,31 +67,48 @@ const ContextFlow = () => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [chatMessages, setChatMessages] = useState([]);
   const [chatInput, setChatInput] = useState('');
+  const [isChatLoading, setIsChatLoading] = useState(false);
 
-  // Simulate OpenAI API call
+  // Generate AI-powered insight
   const generateInsight = async (context) => {
     setIsGenerating(true);
-    
-    // In production, this would call:
-    // const response = await fetch('/api/generate-insight', {
-    //   method: 'POST',
-    //   headers: { 'Content-Type': 'application/json' },
-    //   body: JSON.stringify({ context })
-    // });
-    
-    // Simulated response for demo
-    setTimeout(() => {
+
+    try {
+      const response = await fetch('/api/generate-insight', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          context,
+          userContexts: contexts
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to generate insight');
+      }
+
+      const data = await response.json();
+      const newInsight = {
+        id: insights.length + 1,
+        ...data.insight,
+        timestamp: 'Just now'
+      };
+      setInsights([newInsight, ...insights]);
+    } catch (error) {
+      console.error('Error generating insight:', error);
+      // Fallback to simulated insight on error
       const newInsight = {
         id: insights.length + 1,
         type: 'analysis',
-        title: `New insight for: ${context.title}`,
-        message: `AI-generated analysis would appear here based on your context patterns and connections.`,
+        title: `Insight for: ${context.title}`,
+        message: `Unable to connect to AI service. Please check your API configuration.`,
         timestamp: 'Just now',
         actionable: false
       };
       setInsights([newInsight, ...insights]);
+    } finally {
       setIsGenerating(false);
-    }, 1500);
+    }
   };
 
   const handleAddContext = () => {
@@ -113,20 +130,45 @@ const ContextFlow = () => {
   };
 
   const handleSendMessage = async () => {
-    if (chatInput.trim()) {
+    if (chatInput.trim() && !isChatLoading) {
       const userMessage = { role: 'user', content: chatInput, timestamp: new Date() };
-      setChatMessages([...chatMessages, userMessage]);
+      const newMessages = [...chatMessages, userMessage];
+      setChatMessages(newMessages);
       setChatInput('');
-      
-      // Simulate AI response
-      setTimeout(() => {
+      setIsChatLoading(true);
+
+      try {
+        const response = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            messages: newMessages.map(m => ({ role: m.role, content: m.content })),
+            userContexts: contexts
+          })
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to get response');
+        }
+
+        const data = await response.json();
         const aiMessage = {
           role: 'assistant',
-          content: 'This is where ContextFlow would provide intelligent responses based on your entire context graph. In production, this connects to OpenAI API with your full context as system prompt.',
+          content: data.message,
           timestamp: new Date()
         };
         setChatMessages(prev => [...prev, aiMessage]);
-      }, 1000);
+      } catch (error) {
+        console.error('Error sending message:', error);
+        const errorMessage = {
+          role: 'assistant',
+          content: 'Sorry, I encountered an error. Please check your API configuration and try again.',
+          timestamp: new Date()
+        };
+        setChatMessages(prev => [...prev, errorMessage]);
+      } finally {
+        setIsChatLoading(false);
+      }
     }
   };
 
@@ -383,6 +425,20 @@ const ContextFlow = () => {
                       </div>
                     </div>
                   ))}
+                  {isChatLoading && (
+                    <div className="flex justify-start">
+                      <div className="max-w-[80%] rounded-lg px-4 py-3 bg-zinc-800 text-zinc-100">
+                        <div className="flex items-center gap-2">
+                          <div className="flex gap-1">
+                            <div className="w-2 h-2 bg-zinc-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                            <div className="w-2 h-2 bg-zinc-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                            <div className="w-2 h-2 bg-zinc-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                          </div>
+                          <span className="text-xs text-zinc-400">Thinking...</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -397,7 +453,8 @@ const ContextFlow = () => {
               />
               <button
                 onClick={handleSendMessage}
-                className="bg-blue-600 hover:bg-blue-700 px-6 py-3 rounded-lg font-medium transition-colors flex items-center gap-2"
+                disabled={isChatLoading || !chatInput.trim()}
+                className="bg-blue-600 hover:bg-blue-700 px-6 py-3 rounded-lg font-medium transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Send size={18} />
               </button>
