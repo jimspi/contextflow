@@ -3,12 +3,30 @@ import { createClient } from '@supabase/supabase-js';
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+// Lazy initialization to handle missing environment variables during build
+let supabaseClient = null;
+
+function getSupabaseClient() {
+  if (!supabaseUrl || !supabaseAnonKey) {
+    console.warn('Supabase environment variables are not configured');
+    return null;
+  }
+
+  if (!supabaseClient) {
+    supabaseClient = createClient(supabaseUrl, supabaseAnonKey);
+  }
+
+  return supabaseClient;
+}
+
+// Export a getter that returns the client or null
+export const supabase = getSupabaseClient();
 
 /**
  * Get the current user session
  */
 export async function getSession() {
+  if (!supabase) return null;
   const { data: { session } } = await supabase.auth.getSession();
   return session;
 }
@@ -17,6 +35,7 @@ export async function getSession() {
  * Get the current user
  */
 export async function getUser() {
+  if (!supabase) return null;
   const { data: { user } } = await supabase.auth.getUser();
   return user;
 }
@@ -25,6 +44,7 @@ export async function getUser() {
  * Sign in with email and password
  */
 export async function signIn(email, password) {
+  if (!supabase) return { data: null, error: new Error('Supabase client not configured') };
   const { data, error } = await supabase.auth.signInWithPassword({
     email,
     password,
@@ -36,6 +56,7 @@ export async function signIn(email, password) {
  * Sign up with email and password
  */
 export async function signUp(email, password) {
+  if (!supabase) return { data: null, error: new Error('Supabase client not configured') };
   const { data, error } = await supabase.auth.signUp({
     email,
     password,
@@ -47,6 +68,7 @@ export async function signUp(email, password) {
  * Sign out
  */
 export async function signOut() {
+  if (!supabase) return { error: new Error('Supabase client not configured') };
   const { error } = await supabase.auth.signOut();
   return { error };
 }
@@ -55,6 +77,7 @@ export async function signOut() {
  * Fetch all contexts for the current user
  */
 export async function fetchContexts(userId) {
+  if (!supabase) return { data: null, error: new Error('Supabase client not configured') };
   const { data, error } = await supabase
     .from('contexts')
     .select('*')
@@ -68,6 +91,7 @@ export async function fetchContexts(userId) {
  * Create a new context
  */
 export async function createContext(userId, context) {
+  if (!supabase) return { data: null, error: new Error('Supabase client not configured') };
   const { data, error } = await supabase
     .from('contexts')
     .insert([
@@ -91,6 +115,7 @@ export async function createContext(userId, context) {
  * Update an existing context
  */
 export async function updateContext(contextId, updates) {
+  if (!supabase) return { data: null, error: new Error('Supabase client not configured') };
   const { data, error } = await supabase
     .from('contexts')
     .update({
@@ -108,6 +133,7 @@ export async function updateContext(contextId, updates) {
  * Delete a context
  */
 export async function deleteContext(contextId) {
+  if (!supabase) return { error: new Error('Supabase client not configured') };
   const { error } = await supabase
     .from('contexts')
     .delete()
@@ -120,6 +146,7 @@ export async function deleteContext(contextId) {
  * Search contexts by title or summary
  */
 export async function searchContexts(userId, searchTerm) {
+  if (!supabase) return { data: null, error: new Error('Supabase client not configured') };
   const { data, error } = await supabase
     .from('contexts')
     .select('*')
@@ -134,6 +161,7 @@ export async function searchContexts(userId, searchTerm) {
  * Fetch insights for a user
  */
 export async function fetchInsights(userId) {
+  if (!supabase) return { data: null, error: new Error('Supabase client not configured') };
   const { data, error } = await supabase
     .from('insights')
     .select('*')
@@ -148,6 +176,7 @@ export async function fetchInsights(userId) {
  * Create a new insight
  */
 export async function createInsight(userId, insight) {
+  if (!supabase) return { data: null, error: new Error('Supabase client not configured') };
   const { data, error } = await supabase
     .from('insights')
     .insert([

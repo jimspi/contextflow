@@ -38,6 +38,10 @@ const ContextFlow = () => {
     checkUser();
 
     // Listen for auth changes
+    if (!supabase) {
+      return;
+    }
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
     });
