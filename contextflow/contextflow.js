@@ -152,10 +152,29 @@ const Recall = () => {
   };
 
   // Generate daily summary with real AI intelligence
-  const generateDailySummary = async () => {
+  const generateDailySummary = async (forceRegenerate = false) => {
     if (isDailySummaryGenerating) return;
 
-    console.log('[DAILY SUMMARY] Starting generation...');
+    // Check if already generated today (unless forced by user clicking button)
+    if (!forceRegenerate) {
+      try {
+        const lastGenerated = localStorage.getItem('dailySummaryLastGenerated');
+        const today = new Date().toDateString();
+
+        if (lastGenerated === today) {
+          console.log('[DAILY SUMMARY] Already generated today, loading cached summary');
+          const cachedSummary = localStorage.getItem('dailySummaryCached');
+          if (cachedSummary) {
+            setDailySummary(JSON.parse(cachedSummary));
+            return;
+          }
+        }
+      } catch (e) {
+        console.warn('[DAILY SUMMARY] localStorage error:', e);
+      }
+    }
+
+    console.log('[DAILY SUMMARY] Starting generation...' + (forceRegenerate ? ' (forced by user)' : ''));
     console.log('[DAILY SUMMARY] Total notes:', notes.length);
 
     // Get today's notes - use a more lenient time window (last 24 hours)
@@ -174,11 +193,19 @@ const Recall = () => {
     // If no notes today, show special message
     if (todaysNotes.length === 0) {
       console.log('[DAILY SUMMARY] No recent notes found');
-      setDailySummary({
+      const emptySummary = {
         summary: "No new notes in the last 24 hours",
         noteCount: 0,
         isEmpty: true
-      });
+      };
+      setDailySummary(emptySummary);
+      // Cache the empty state too
+      try {
+        localStorage.setItem('dailySummaryLastGenerated', new Date().toDateString());
+        localStorage.setItem('dailySummaryCached', JSON.stringify(emptySummary));
+      } catch (e) {
+        console.warn('[DAILY SUMMARY] localStorage error:', e);
+      }
       return;
     }
 
@@ -234,11 +261,22 @@ Provide a concise but insightful 3-4 sentence summary that adds real value.`;
 
       console.log('[DAILY SUMMARY] Successfully generated summary:', data.response);
 
-      setDailySummary({
+      const summaryData = {
         summary: data.response,
         noteCount: todaysNotes.length,
         isEmpty: false
-      });
+      };
+
+      setDailySummary(summaryData);
+
+      // Cache the summary so it only generates once per day
+      try {
+        localStorage.setItem('dailySummaryLastGenerated', new Date().toDateString());
+        localStorage.setItem('dailySummaryCached', JSON.stringify(summaryData));
+        console.log('[DAILY SUMMARY] Cached summary for today');
+      } catch (e) {
+        console.warn('[DAILY SUMMARY] localStorage error:', e);
+      }
     } catch (error) {
       console.error('[DAILY SUMMARY] Error:', error);
       console.error('[DAILY SUMMARY] Error stack:', error.stack);
@@ -254,17 +292,14 @@ Provide a concise but insightful 3-4 sentence summary that adds real value.`;
     }
   };
 
-  // Auto-generate daily summary when notes change or user logs in
+  // Load cached summary on page load (don't auto-generate)
   useEffect(() => {
-    if (notes.length > 0 && user && !isDailySummaryGenerating) {
-      console.log('[DAILY SUMMARY] useEffect triggered - regenerating summary');
-      // Use setTimeout to debounce and avoid infinite loops
-      const timer = setTimeout(() => {
-        generateDailySummary();
-      }, 500);
-      return () => clearTimeout(timer);
+    if (notes.length > 0 && user && !dailySummary) {
+      console.log('[DAILY SUMMARY] Loading summary on page load...');
+      // Only load cached data, don't regenerate automatically
+      generateDailySummary(false); // Will load from cache if available
     }
-  }, [notes.length, user]); // Only trigger on length change or user change, not every render
+  }, [notes.length, user]); // Only trigger once when data loads
 
   const handleAddNote = async () => {
     if (newNote.title.trim()) {
@@ -864,12 +899,20 @@ Provide a concise but insightful 3-4 sentence summary that adds real value.`;
             <div className="mb-8">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-xl font-semibold">Today's Summary</h2>
-                {!isDailySummaryGenerating && dailySummary && !dailySummary.isEmpty && (
+                {!isDailySummaryGenerating && dailySummary && !dailySummary.isEmpty && !dailySummary.isError && (
                   <button
-                    onClick={generateDailySummary}
+                    onClick={() => generateDailySummary(true)}
                     className="text-sm text-blue-400 hover:text-blue-300 transition-colors"
                   >
-                    Refresh
+                    Regenerate
+                  </button>
+                )}
+                {!isDailySummaryGenerating && (!dailySummary || dailySummary.isEmpty) && notes.length > 0 && (
+                  <button
+                    onClick={() => generateDailySummary(true)}
+                    className="text-sm text-blue-400 hover:text-blue-300 transition-colors"
+                  >
+                    Generate Summary
                   </button>
                 )}
               </div>
@@ -901,7 +944,7 @@ Provide a concise but insightful 3-4 sentence summary that adds real value.`;
                             <p className="text-red-300 font-medium mb-2">Failed to generate AI summary</p>
                             <p className="text-sm text-zinc-400 mb-3">{dailySummary.summary}</p>
                             <button
-                              onClick={generateDailySummary}
+                              onClick={() => generateDailySummary(true)}
                               className="bg-red-600 hover:bg-red-700 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
                             >
                               Retry

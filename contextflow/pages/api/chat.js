@@ -39,21 +39,37 @@ Use this context to provide personalized, relevant responses. Reference specific
       })
     });
 
+    if (!response.ok) {
+      const errorData = await response.json();
+      console.error('[API /chat] OpenAI API error:', response.status, errorData);
+      throw new Error(`OpenAI API returned ${response.status}: ${errorData.error?.message || 'Unknown error'}`);
+    }
+
     const data = await response.json();
-    
+
     if (data.error) {
       throw new Error(data.error.message);
     }
 
+    if (!data.choices || !data.choices[0] || !data.choices[0].message) {
+      console.error('[API /chat] Unexpected response format:', data);
+      throw new Error('Invalid response format from OpenAI');
+    }
+
+    const responseContent = data.choices[0].message.content;
+    console.log('[API /chat] Successfully generated response');
+
     return res.status(200).json({
-      message: data.choices[0].message.content,
+      response: responseContent, // Changed from "message" to "response" to match client expectation
+      message: responseContent,   // Keep for backwards compatibility
       usage: data.usage
     });
   } catch (error) {
-    console.error('OpenAI API Error:', error);
-    return res.status(500).json({ 
+    console.error('[API /chat] Error:', error);
+    return res.status(500).json({
       error: 'Failed to process chat message',
-      details: error.message 
+      details: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 }
