@@ -1,7 +1,7 @@
 {
-  "name": "contextflow",
+  "name": "recall",
   "version": "1.0.0",
-  "description": "Personal AI Memory Layer - A forward-looking AI product that builds continuous understanding of your life",
+  "description": "Your AI Memory Assistant - Never forget important things again with AI-powered notes and insights",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -12,9 +12,12 @@
     "@supabase/ssr": "^0.7.0",
     "@supabase/supabase-js": "^2.77.0",
     "lucide-react": "^0.263.1",
+    "mammoth": "^1.7.2",
     "next": "^14.0.0",
+    "pdf-parse": "^1.1.1",
     "react": "^18.2.0",
-    "react-dom": "^18.2.0"
+    "react-dom": "^18.2.0",
+    "tesseract.js": "^5.1.1"
   },
   "devDependencies": {
     "autoprefixer": "^10.4.16",

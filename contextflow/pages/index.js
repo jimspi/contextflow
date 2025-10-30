@@ -1,15 +1,15 @@
 import Head from 'next/head'
-import ContextFlow from '../contextflow'
+import Recall from '../contextflow'
 
 export default function Home() {
   return (
     <>
       <Head>
-        <title>ContextFlow - Personal AI Memory Layer</title>
-        <meta name="description" content="A forward-looking AI product that builds continuous understanding of your work, life, and goals" />
+        <title>Recall - Your AI Memory Assistant</title>
+        <meta name="description" content="Never forget important things again. AI-powered notes and insights to help you remember what matters." />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
       </Head>
-      <ContextFlow />
+      <Recall />
     </>
   )
 }

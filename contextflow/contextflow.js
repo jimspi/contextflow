@@ -2,8 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { Brain, Zap, Calendar, MessageSquare, TrendingUp, Clock, Plus, X, Send, Upload, Trash2, LogOut, Search, Edit2, ChevronRight, HelpCircle } from 'lucide-react';
 import { supabase } from './lib/supabase';
 import { useRouter } from 'next/router';
+import { processFile } from './lib/fileProcessors';
 
-const ContextFlow = () => {
+const Recall = () => {
   const router = useRouter();
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -25,6 +26,19 @@ const ContextFlow = () => {
   // Onboarding states
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [onboardingStep, setOnboardingStep] = useState(0);
+
+  // Daily summary
+  const [dailySummary, setDailySummary] = useState(null);
+  const [isDailySummaryGenerating, setIsDailySummaryGenerating] = useState(false);
+
+  // Toast notifications
+  const [toast, setToast] = useState(null);
+
+  // Show toast notification
+  const showToast = (message, type = 'success') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3000);
+  };
 
   // Check authentication and load data
   useEffect(() => {
@@ -128,14 +142,87 @@ const ContextFlow = () => {
       setInsights([savedInsight, ...insights]);
 
       // Show success message
-      alert('✨ New AI insight generated!');
+      showToast('✨ New AI insight generated!', 'success');
     } catch (error) {
       console.error('Error generating insight:', error);
-      alert('⚠️ Failed to generate insight. Please check your API key.');
+      showToast('⚠️ Failed to generate insight. Please check your API key.', 'error');
     } finally {
       setIsGenerating(false);
     }
   };
+
+  // Generate daily summary
+  const generateDailySummary = async () => {
+    if (isDailySummaryGenerating) return;
+
+    // Get today's notes
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const todaysNotes = notes.filter(note => {
+      const noteDate = new Date(note.created_at || note.last_updated);
+      noteDate.setHours(0, 0, 0, 0);
+      return noteDate.getTime() === today.getTime();
+    });
+
+    // If no notes today, show special message
+    if (todaysNotes.length === 0) {
+      setDailySummary({
+        summary: "No new notes today",
+        noteCount: 0,
+        isEmpty: true
+      });
+      return;
+    }
+
+    setIsDailySummaryGenerating(true);
+
+    try {
+      // Create summary of today's notes
+      const notesText = todaysNotes.map(note =>
+        `${note.title}: ${note.summary || '(no description)'}`
+      ).join('\n');
+
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: [{
+            role: 'user',
+            content: `Summarize these notes from today in 2-3 sentences, highlighting key themes and priorities:\n\n${notesText}`
+          }],
+          userContexts: todaysNotes
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to generate daily summary');
+      }
+
+      const data = await response.json();
+      setDailySummary({
+        summary: data.response,
+        noteCount: todaysNotes.length,
+        isEmpty: false
+      });
+    } catch (error) {
+      console.error('Error generating daily summary:', error);
+      setDailySummary({
+        summary: `You added ${todaysNotes.length} note(s) today.`,
+        noteCount: todaysNotes.length,
+        isEmpty: false
+      });
+    } finally {
+      setIsDailySummaryGenerating(false);
+    }
+  };
+
+  // Auto-generate daily summary when notes change
+  useEffect(() => {
+    if (notes.length > 0 && user) {
+      generateDailySummary();
+    }
+  }, [notes.length]);
 
   const handleAddNote = async () => {
     if (newNote.title.trim()) {
@@ -164,7 +251,7 @@ const ContextFlow = () => {
         setShowAddNote(false);
 
         // Success message and auto-generate insight
-        alert('✅ Note added! Generating AI insights...');
+        showToast('✅ Note added! Generating AI insights...', 'success');
 
         // Auto-generate insight
         generateInsight(savedNote);
@@ -175,7 +262,7 @@ const ContextFlow = () => {
         }
       } catch (error) {
         console.error('Error adding note:', error);
-        alert('Failed to add note. Please try again.');
+        showToast('Failed to add note. Please try again.', 'error');
       }
     }
   };
@@ -198,10 +285,10 @@ const ContextFlow = () => {
         setNotes(notes.map(n => n.id === editingNote.id ? editingNote : n));
         setShowEditNote(false);
         setEditingNote(null);
-        alert('✅ Note updated!');
+        showToast('✅ Note updated!', 'success');
       } catch (error) {
         console.error('Error updating note:', error);
-        alert('Failed to update note. Please try again.');
+        showToast('Failed to update note. Please try again.', 'error');
       }
     }
   };
@@ -210,45 +297,44 @@ const ContextFlow = () => {
     if (!files || files.length === 0) return;
 
     let allNotes = [];
+    let successCount = 0;
+    let errorCount = 0;
+
+    // Show loading state
+    setIsGenerating(true);
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
 
       try {
-        const content = await new Promise((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = (e) => resolve(e.target.result);
-          reader.onerror = reject;
-          reader.readAsText(file);
-        });
+        // Use the new processFile utility that supports multiple formats
+        const result = await processFile(file);
 
-        let data;
+        // Create a note from the extracted content
+        const note = {
+          title: result.title || file.name,
+          summary: result.content || '',
+          type: 'imported',
+          priority: 'medium',
+          connections: [],
+          metadata: {
+            source: result.source,
+            originalFilename: file.name,
+            importedAt: new Date().toISOString()
+          }
+        };
 
-        if (file.name.endsWith('.json')) {
-          data = JSON.parse(content);
-        } else if (file.name.endsWith('.csv')) {
-          const lines = content.split('\n');
-          data = lines.slice(1).filter(line => line.trim()).map((line) => {
-            const [title, summary, type, priority] = line.split(',').map(s => s.trim());
-            return {
-              title: title || 'Untitled',
-              summary: summary || '',
-              type: type || 'custom',
-              priority: priority || 'medium',
-              connections: [],
-            };
-          });
-        } else {
-          continue;
-        }
-
-        const newNotes = Array.isArray(data) ? data : [data];
-        allNotes = [...allNotes, ...newNotes];
+        allNotes.push(note);
+        successCount++;
       } catch (error) {
-        console.error(`Error parsing file ${file.name}:`, error);
+        console.error(`Error processing file ${file.name}:`, error);
+        errorCount++;
       }
     }
 
+    setIsGenerating(false);
+
+    // Save all successfully processed notes
     if (allNotes.length > 0) {
       try {
         const notesToInsert = allNotes.map(note => ({
@@ -266,13 +352,23 @@ const ContextFlow = () => {
 
         setNotes([...savedNotes, ...notes]);
         setShowUpload(false);
-        alert(`✅ Successfully imported ${savedNotes.length} note(s)!`);
+
+        // Generate insights for imported notes automatically
+        savedNotes.forEach(note => {
+          generateInsight(note);
+        });
+
+        let message = `✅ Successfully imported ${savedNotes.length} note(s)!`;
+        if (errorCount > 0) {
+          message += ` ⚠️ ${errorCount} file(s) failed.`;
+        }
+        showToast(message, 'success');
       } catch (error) {
         console.error('Error saving notes:', error);
-        alert('Failed to save notes to database.');
+        showToast('Failed to save notes to database.', 'error');
       }
     } else {
-      alert('No valid files found. Please upload JSON or CSV files.');
+      showToast('⚠️ No files could be processed. Please check the file formats.', 'error');
     }
   };
 
@@ -307,17 +403,17 @@ const ContextFlow = () => {
         if (error) throw error;
 
         setNotes(notes.filter(n => n.id !== noteId));
-        alert('✅ Note deleted');
+        showToast('✅ Note deleted', 'success');
       } catch (error) {
         console.error('Error deleting note:', error);
-        alert('Failed to delete note.');
+        showToast('Failed to delete note.', 'error');
       }
     }
   };
 
   const handleQuickAction = async (insight, action) => {
     if (action === 'done') {
-      // Mark insight as done by deleting it
+      // Mark insight as done by deleting it with visual feedback
       try {
         const { error } = await supabase
           .from('insights')
@@ -326,14 +422,16 @@ const ContextFlow = () => {
 
         if (error) throw error;
         setInsights(insights.filter(i => i.id !== insight.id));
-        alert('✅ Marked as done');
+        showToast('✅ Marked as done!', 'success');
       } catch (error) {
         console.error('Error:', error);
+        showToast('⚠️ Failed to mark as done', 'error');
       }
     } else if (action === 'chat') {
       // Go to chat with pre-filled message
       setActiveView('chat');
       setChatInput(`Help me with: ${insight.title}`);
+      showToast('💬 Opening chat...', 'info');
     }
   };
 
@@ -546,7 +644,7 @@ const ContextFlow = () => {
                 <Brain size={24} />
               </div>
               <div>
-                <h1 className="text-xl font-bold">ContextFlow</h1>
+                <h1 className="text-xl font-bold">Recall</h1>
                 <p className="text-xs text-zinc-500">AI-Powered Second Brain</p>
               </div>
             </div>
@@ -588,7 +686,7 @@ const ContextFlow = () => {
           <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-8 max-w-lg w-full">
             <div className="text-center mb-6">
               <Brain size={48} className="mx-auto mb-4 text-blue-500" />
-              <h2 className="text-2xl font-bold mb-2">Welcome to ContextFlow!</h2>
+              <h2 className="text-2xl font-bold mb-2">Welcome to Recall!</h2>
               <p className="text-zinc-400">Let's get you started in 3 easy steps</p>
             </div>
 
@@ -708,6 +806,54 @@ const ContextFlow = () => {
                 value={notes.filter(n => n.priority === 'high').length}
                 onClick={() => setFilterPriority('high')}
               />
+            </div>
+
+            {/* Daily Summary Section */}
+            <div className="mb-8">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl font-semibold">Today's Summary</h2>
+                {!isDailySummaryGenerating && dailySummary && !dailySummary.isEmpty && (
+                  <button
+                    onClick={generateDailySummary}
+                    className="text-sm text-blue-400 hover:text-blue-300 transition-colors"
+                  >
+                    Refresh
+                  </button>
+                )}
+              </div>
+              <div className="bg-gradient-to-br from-blue-900/20 to-purple-900/20 border border-blue-800/30 rounded-lg p-6">
+                {isDailySummaryGenerating ? (
+                  <div className="text-center py-4">
+                    <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-400 mb-3"></div>
+                    <p className="text-zinc-400">Generating daily summary...</p>
+                  </div>
+                ) : dailySummary ? (
+                  <div>
+                    {dailySummary.isEmpty ? (
+                      <div className="text-center py-4">
+                        <Calendar size={48} className="text-zinc-700 mx-auto mb-3" />
+                        <p className="text-zinc-400 text-lg mb-2">No new notes today</p>
+                        <p className="text-zinc-600 text-sm">Add a note to start your day!</p>
+                      </div>
+                    ) : (
+                      <div>
+                        <div className="flex items-center gap-2 mb-3">
+                          <Calendar size={20} className="text-blue-400" />
+                          <span className="text-sm text-blue-300 font-medium">
+                            {dailySummary.noteCount} note{dailySummary.noteCount !== 1 ? 's' : ''} added today
+                          </span>
+                        </div>
+                        <p className="text-white leading-relaxed">{dailySummary.summary}</p>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="text-center py-4">
+                    <Calendar size={48} className="text-zinc-700 mx-auto mb-3" />
+                    <p className="text-zinc-500">Loading daily summary...</p>
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Recent Insights Section */}
@@ -916,7 +1062,7 @@ const ContextFlow = () => {
                     <p className="text-sm text-zinc-500 mb-4">or click to browse</p>
                     <input
                       type="file"
-                      accept=".json,.csv"
+                      accept=".json,.csv,.txt,.docx,.pdf,.jpg,.jpeg,.png"
                       multiple
                       onChange={(e) => handleFileUpload(e.target.files)}
                       className="hidden"
@@ -933,8 +1079,12 @@ const ContextFlow = () => {
                   <div className="mt-4 p-4 bg-zinc-800 rounded-lg">
                     <p className="text-sm text-zinc-400 mb-2">Supported formats:</p>
                     <ul className="text-xs text-zinc-500 space-y-1">
-                      <li>• CSV: title,summary,type,priority</li>
-                      <li>• JSON: Array of note objects</li>
+                      <li>• Word Documents (.docx) - Text will be extracted automatically</li>
+                      <li>• PDF Files (.pdf) - Text will be extracted automatically</li>
+                      <li>• Images (.jpg, .jpeg, .png) - Text will be extracted using OCR</li>
+                      <li>• CSV Files (.csv) - Format: title,summary,type,priority</li>
+                      <li>• JSON Files (.json) - Array of note objects</li>
+                      <li>• Text Files (.txt) - Plain text content</li>
                     </ul>
                   </div>
                 </div>
@@ -1056,8 +1206,28 @@ const ContextFlow = () => {
       >
         <Plus size={24} />
       </button>
+
+      {/* Toast Notification */}
+      {toast && (
+        <div className="fixed bottom-6 left-6 z-50 animate-slide-up">
+          <div className={`
+            px-6 py-4 rounded-lg shadow-2xl flex items-center gap-3 min-w-[300px]
+            ${toast.type === 'success' ? 'bg-green-600 border border-green-500' : ''}
+            ${toast.type === 'error' ? 'bg-red-600 border border-red-500' : ''}
+            ${toast.type === 'info' ? 'bg-blue-600 border border-blue-500' : ''}
+          `}>
+            <span className="text-white font-medium">{toast.message}</span>
+            <button
+              onClick={() => setToast(null)}
+              className="ml-auto text-white/80 hover:text-white transition-colors"
+            >
+              <X size={18} />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
 
-export default ContextFlow;
+export default Recall;

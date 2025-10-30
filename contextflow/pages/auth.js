@@ -58,7 +58,7 @@ export default function Auth() {
   return (
     <>
       <Head>
-        <title>{isSignUp ? 'Sign Up' : 'Sign In'} - ContextFlow</title>
+        <title>{isSignUp ? 'Sign Up' : 'Sign In'} - Recall</title>
         <meta name="viewport" content="width=device-width, initial-scale=1" />
       </Head>
 
@@ -69,8 +69,8 @@ export default function Auth() {
             <div className="bg-gradient-to-br from-blue-500 to-purple-600 p-3 rounded-xl inline-block mb-4">
               <Brain size={32} />
             </div>
-            <h1 className="text-3xl font-bold mb-2">ContextFlow</h1>
-            <p className="text-zinc-500 text-lg mb-6">Your AI-Powered Second Brain</p>
+            <h1 className="text-3xl font-bold mb-2">Recall</h1>
+            <p className="text-zinc-500 text-lg mb-6">Your AI-Powered Memory Assistant</p>
 
             {/* Value Proposition */}
             <div className="grid grid-cols-3 gap-4 mb-6">
@@ -95,7 +95,7 @@ export default function Auth() {
             </div>
 
             <p className="text-sm text-zinc-500">
-              Never forget important things again. ContextFlow uses AI to help you remember, connect, and act on what matters.
+              Never forget important things again. Recall uses AI to help you remember, connect, and act on what matters.
             </p>
           </div>
 
