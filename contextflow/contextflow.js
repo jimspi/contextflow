@@ -292,12 +292,32 @@ Provide a concise but insightful 3-4 sentence summary that adds real value.`;
     }
   };
 
-  // Load cached summary on page load (don't auto-generate)
+  // Load cached summary on page load and check if it's time to generate (8pm MST)
   useEffect(() => {
-    if (notes.length > 0 && user && !dailySummary) {
-      console.log('[DAILY SUMMARY] Loading summary on page load...');
-      // Only load cached data, don't regenerate automatically
-      generateDailySummary(false); // Will load from cache if available
+    if (notes.length > 0 && user) {
+      console.log('[DAILY SUMMARY] Checking if summary needs generation...');
+
+      // Check if it's 8pm MST or later today
+      const now = new Date();
+      const mstOffset = -7 * 60; // MST is UTC-7 (in minutes)
+      const localOffset = now.getTimezoneOffset();
+      const mstTime = new Date(now.getTime() + (localOffset + mstOffset) * 60000);
+      const currentHour = mstTime.getHours();
+
+      console.log('[DAILY SUMMARY] Current time in MST:', mstTime.toLocaleString('en-US', { timeZone: 'America/Denver' }));
+      console.log('[DAILY SUMMARY] Hour in MST:', currentHour);
+
+      const lastGenerated = localStorage.getItem('dailySummaryLastGenerated');
+      const today = new Date().toDateString();
+      const shouldAutoGenerate = currentHour >= 20 && lastGenerated !== today; // 20 = 8pm
+
+      if (shouldAutoGenerate) {
+        console.log('[DAILY SUMMARY] It\'s 8pm MST or later and no summary today - auto-generating');
+        generateDailySummary(false);
+      } else {
+        console.log('[DAILY SUMMARY] Loading cached summary (not time to auto-generate)');
+        generateDailySummary(false); // Will load from cache if available
+      }
     }
   }, [notes.length, user]); // Only trigger once when data loads
 
@@ -327,11 +347,8 @@ Provide a concise but insightful 3-4 sentence summary that adds real value.`;
         setNewNote({ title: '', description: '', type: 'custom', priority: 'medium' });
         setShowAddNote(false);
 
-        // Success message and auto-generate insight
-        showToast('✅ Note added! Generating AI insights...', 'success');
-
-        // Auto-generate insight
-        generateInsight(savedNote);
+        // Success message only (no auto-generate insight)
+        showToast('✅ Note added!', 'success');
 
         // Close onboarding if active
         if (showOnboarding) {
@@ -399,12 +416,8 @@ Provide a concise but insightful 3-4 sentence summary that adds real value.`;
           summary: result.content || '',
           type: 'imported',
           priority: 'medium',
-          connections: [],
-          metadata: {
-            source: result.source,
-            originalFilename: file.name,
-            importedAt: new Date().toISOString()
-          }
+          connections: []
+          // Removed metadata field - not in database schema
         };
 
         allNotes.push(note);
@@ -437,10 +450,7 @@ Provide a concise but insightful 3-4 sentence summary that adds real value.`;
         setNotes([...savedNotes, ...notes]);
         setShowUpload(false);
 
-        // Generate insights for imported notes automatically
-        savedNotes.forEach(note => {
-          generateInsight(note);
-        });
+        // Don't auto-generate insights - user must click button
 
         let message = `✅ Successfully imported ${savedNotes.length} note(s)!`;
         if (errorCount > 0) {
