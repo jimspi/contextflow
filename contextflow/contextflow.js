@@ -151,7 +151,7 @@ const Recall = () => {
     }
   };
 
-  // Generate daily summary
+  // Generate daily summary with real AI intelligence
   const generateDailySummary = async () => {
     if (isDailySummaryGenerating) return;
 
@@ -178,10 +178,24 @@ const Recall = () => {
     setIsDailySummaryGenerating(true);
 
     try {
-      // Create summary of today's notes
-      const notesText = todaysNotes.map(note =>
-        `${note.title}: ${note.summary || '(no description)'}`
-      ).join('\n');
+      // Create detailed summary prompt for AI
+      const notesText = todaysNotes.map(note => {
+        const priority = note.priority ? `[${note.priority.toUpperCase()} PRIORITY]` : '';
+        return `${priority} ${note.title}: ${note.summary || '(no description)'}`;
+      }).join('\n\n');
+
+      const prompt = `You are an intelligent daily summary assistant. Analyze these notes from today and provide a valuable summary that helps the user understand:
+1. What were the main themes or topics?
+2. What requires urgent attention (high priority items)?
+3. Any patterns or connections you notice?
+4. A quick actionable insight or recommendation
+
+Today's Notes:
+${notesText}
+
+Provide a concise but insightful 3-4 sentence summary that adds real value.`;
+
+      console.log('Generating daily summary with prompt:', prompt);
 
       const response = await fetch('/api/chat', {
         method: 'POST',
@@ -189,17 +203,22 @@ const Recall = () => {
         body: JSON.stringify({
           messages: [{
             role: 'user',
-            content: `Summarize these notes from today in 2-3 sentences, highlighting key themes and priorities:\n\n${notesText}`
+            content: prompt
           }],
           userContexts: todaysNotes
         })
       });
 
       if (!response.ok) {
-        throw new Error('Failed to generate daily summary');
+        const errorText = await response.text();
+        console.error('Daily summary API error:', response.status, errorText);
+        throw new Error(`API returned ${response.status}: ${errorText}`);
       }
 
       const data = await response.json();
+
+      console.log('Daily summary generated successfully:', data);
+
       setDailySummary({
         summary: data.response,
         noteCount: todaysNotes.length,
@@ -207,10 +226,12 @@ const Recall = () => {
       });
     } catch (error) {
       console.error('Error generating daily summary:', error);
+      // Show error state instead of useless fallback
       setDailySummary({
-        summary: `You added ${todaysNotes.length} note(s) today.`,
+        summary: `Failed to generate AI summary. Please check your OpenAI API key is configured correctly. Error: ${error.message}`,
         noteCount: todaysNotes.length,
-        isEmpty: false
+        isEmpty: false,
+        isError: true
       });
     } finally {
       setIsDailySummaryGenerating(false);
@@ -299,16 +320,22 @@ const Recall = () => {
     let allNotes = [];
     let successCount = 0;
     let errorCount = 0;
+    let errors = [];
 
-    // Show loading state
+    // Show loading state with file processing message
     setIsGenerating(true);
+    showToast(`Processing ${files.length} file(s)...`, 'info');
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
 
       try {
+        console.log(`Processing file: ${file.name}, type: ${file.type}, size: ${file.size}`);
+
         // Use the new processFile utility that supports multiple formats
         const result = await processFile(file);
+
+        console.log(`Successfully processed ${file.name}:`, result);
 
         // Create a note from the extracted content
         const note = {
@@ -328,6 +355,7 @@ const Recall = () => {
         successCount++;
       } catch (error) {
         console.error(`Error processing file ${file.name}:`, error);
+        errors.push({ fileName: file.name, error: error.message });
         errorCount++;
       }
     }
@@ -361,6 +389,7 @@ const Recall = () => {
         let message = `✅ Successfully imported ${savedNotes.length} note(s)!`;
         if (errorCount > 0) {
           message += ` ⚠️ ${errorCount} file(s) failed.`;
+          console.error('File processing errors:', errors);
         }
         showToast(message, 'success');
       } catch (error) {
@@ -368,7 +397,9 @@ const Recall = () => {
         showToast('Failed to save notes to database.', 'error');
       }
     } else {
-      showToast('⚠️ No files could be processed. Please check the file formats.', 'error');
+      const errorDetails = errors.map(e => `${e.fileName}: ${e.error}`).join('; ');
+      console.error('All files failed to process:', errorDetails);
+      showToast(`⚠️ Failed to process files. Check console for details.`, 'error');
     }
   };
 
@@ -821,11 +852,15 @@ const Recall = () => {
                   </button>
                 )}
               </div>
-              <div className="bg-gradient-to-br from-blue-900/20 to-purple-900/20 border border-blue-800/30 rounded-lg p-6">
+              <div className={`rounded-lg p-6 ${
+                dailySummary?.isError
+                  ? 'bg-gradient-to-br from-red-900/20 to-orange-900/20 border border-red-800/30'
+                  : 'bg-gradient-to-br from-blue-900/20 to-purple-900/20 border border-blue-800/30'
+              }`}>
                 {isDailySummaryGenerating ? (
                   <div className="text-center py-4">
                     <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-400 mb-3"></div>
-                    <p className="text-zinc-400">Generating daily summary...</p>
+                    <p className="text-zinc-400">AI is analyzing your notes...</p>
                   </div>
                 ) : dailySummary ? (
                   <div>
@@ -835,15 +870,33 @@ const Recall = () => {
                         <p className="text-zinc-400 text-lg mb-2">No new notes today</p>
                         <p className="text-zinc-600 text-sm">Add a note to start your day!</p>
                       </div>
+                    ) : dailySummary.isError ? (
+                      <div className="py-2">
+                        <div className="flex items-start gap-3 mb-3">
+                          <div className="bg-red-900/30 p-2 rounded">
+                            <Zap size={20} className="text-red-400" />
+                          </div>
+                          <div className="flex-1">
+                            <p className="text-red-300 font-medium mb-2">Failed to generate AI summary</p>
+                            <p className="text-sm text-zinc-400 mb-3">{dailySummary.summary}</p>
+                            <button
+                              onClick={generateDailySummary}
+                              className="bg-red-600 hover:bg-red-700 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                            >
+                              Retry
+                            </button>
+                          </div>
+                        </div>
+                      </div>
                     ) : (
                       <div>
                         <div className="flex items-center gap-2 mb-3">
-                          <Calendar size={20} className="text-blue-400" />
+                          <Zap size={20} className="text-blue-400" />
                           <span className="text-sm text-blue-300 font-medium">
-                            {dailySummary.noteCount} note{dailySummary.noteCount !== 1 ? 's' : ''} added today
+                            AI Summary • {dailySummary.noteCount} note{dailySummary.noteCount !== 1 ? 's' : ''} today
                           </span>
                         </div>
-                        <p className="text-white leading-relaxed">{dailySummary.summary}</p>
+                        <p className="text-white leading-relaxed text-base">{dailySummary.summary}</p>
                       </div>
                     )}
                   </div>
