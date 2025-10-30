@@ -1,113 +1,125 @@
 import React, { useState, useEffect } from 'react';
-import { Brain, Zap, Calendar, MessageSquare, TrendingUp, Clock, Plus, X, Send } from 'lucide-react';
+import { Brain, Zap, Calendar, MessageSquare, TrendingUp, Clock, Plus, X, Send, Upload, Trash2 } from 'lucide-react';
 
 const ContextFlow = () => {
   const [activeView, setActiveView] = useState('dashboard');
-  const [contexts, setContexts] = useState([
-    {
-      id: 1,
-      type: 'project',
-      title: 'Q4 Product Launch',
-      summary: 'Coordinating with design and engineering teams',
-      connections: ['Sarah Chen', 'Product roadmap', 'Marketing plan'],
-      lastUpdated: '2 hours ago',
-      priority: 'high'
-    },
-    {
-      id: 2,
-      type: 'personal',
-      title: 'Learning Spanish',
-      summary: 'Mentioned 3 months ago, no recent progress',
-      connections: ['Language goals', 'Travel plans'],
-      lastUpdated: '3 months ago',
-      priority: 'medium'
-    },
-    {
-      id: 3,
-      type: 'professional',
-      title: 'Sarah Chen - Climate Tech',
-      summary: 'Met at Denver conference, discussed collaboration',
-      connections: ['Networking', 'Climate initiatives'],
-      lastUpdated: '2 weeks ago',
-      priority: 'medium'
-    }
-  ]);
-
-  const [insights, setInsights] = useState([
-    {
-      id: 1,
-      type: 'opportunity',
-      title: 'Reconnection Opportunity',
-      message: 'Sarah from Denver conference is in your area. You mentioned wanting to reconnect about climate tech collaboration.',
-      timestamp: '10 minutes ago',
-      actionable: true
-    },
-    {
-      id: 2,
-      type: 'reminder',
-      title: 'Long-term Goal Check',
-      message: 'Your Spanish learning goal has been inactive for 3 months. There are language exchange meetups this week.',
-      timestamp: '1 hour ago',
-      actionable: true
-    },
-    {
-      id: 3,
-      type: 'conflict',
-      title: 'Schedule Optimization',
-      message: 'Three meetings tomorrow could be consolidated to create 90 minutes of focused work time.',
-      timestamp: '3 hours ago',
-      actionable: true
-    }
-  ]);
-
+  const [contexts, setContexts] = useState([]);
+  const [insights, setInsights] = useState([]);
   const [showAddContext, setShowAddContext] = useState(false);
-  const [newContext, setNewContext] = useState({ title: '', description: '' });
+  const [newContext, setNewContext] = useState({ title: '', description: '', type: 'custom', priority: 'medium' });
   const [isGenerating, setIsGenerating] = useState(false);
   const [chatMessages, setChatMessages] = useState([]);
   const [chatInput, setChatInput] = useState('');
+  const [showUpload, setShowUpload] = useState(false);
+  const [selectedInsight, setSelectedInsight] = useState(null);
+  const [showActionModal, setShowActionModal] = useState(false);
 
-  // Simulate OpenAI API call
+  // Generate AI insight using OpenAI API
   const generateInsight = async (context) => {
     setIsGenerating(true);
-    
-    // In production, this would call:
-    // const response = await fetch('/api/generate-insight', {
-    //   method: 'POST',
-    //   headers: { 'Content-Type': 'application/json' },
-    //   body: JSON.stringify({ context })
-    // });
-    
-    // Simulated response for demo
-    setTimeout(() => {
+
+    try {
+      const response = await fetch('/api/generate-insight', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ context, userContexts: contexts })
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to generate insight');
+      }
+
+      const data = await response.json();
       const newInsight = {
-        id: insights.length + 1,
-        type: 'analysis',
-        title: `New insight for: ${context.title}`,
-        message: `AI-generated analysis would appear here based on your context patterns and connections.`,
-        timestamp: 'Just now',
-        actionable: false
+        id: Date.now(),
+        ...data.insight,
+        timestamp: 'Just now'
       };
       setInsights([newInsight, ...insights]);
+    } catch (error) {
+      console.error('Error generating insight:', error);
+      alert('Failed to generate insight. Please check your API key and try again.');
+    } finally {
       setIsGenerating(false);
-    }, 1500);
+    }
   };
 
   const handleAddContext = () => {
     if (newContext.title.trim()) {
       const context = {
-        id: contexts.length + 1,
-        type: 'custom',
+        id: Date.now(),
+        type: newContext.type || 'custom',
         title: newContext.title,
         summary: newContext.description,
         connections: [],
         lastUpdated: 'Just now',
-        priority: 'medium'
+        priority: newContext.priority || 'medium'
       };
       setContexts([context, ...contexts]);
-      setNewContext({ title: '', description: '' });
+      setNewContext({ title: '', description: '', type: 'custom', priority: 'medium' });
       setShowAddContext(false);
       generateInsight(context);
     }
+  };
+
+  const handleFileUpload = async (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      try {
+        const content = e.target.result;
+        let data;
+
+        if (file.name.endsWith('.json')) {
+          data = JSON.parse(content);
+        } else if (file.name.endsWith('.csv')) {
+          // Simple CSV parsing for contexts
+          const lines = content.split('\n');
+          data = lines.slice(1).filter(line => line.trim()).map((line, idx) => {
+            const [title, summary, type, priority] = line.split(',').map(s => s.trim());
+            return {
+              id: Date.now() + idx,
+              title: title || 'Untitled',
+              summary: summary || '',
+              type: type || 'custom',
+              priority: priority || 'medium',
+              connections: [],
+              lastUpdated: 'Just now'
+            };
+          });
+        } else {
+          alert('Please upload a JSON or CSV file');
+          return;
+        }
+
+        // Add uploaded contexts
+        const newContexts = Array.isArray(data) ? data : [data];
+        setContexts([...newContexts.map((ctx, idx) => ({
+          ...ctx,
+          id: Date.now() + idx,
+          lastUpdated: 'Just now'
+        })), ...contexts]);
+        setShowUpload(false);
+        alert(`Successfully imported ${newContexts.length} context(s)`);
+      } catch (error) {
+        console.error('Error parsing file:', error);
+        alert('Failed to parse file. Please check the format.');
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const handleDeleteContext = (contextId) => {
+    if (confirm('Are you sure you want to delete this context?')) {
+      setContexts(contexts.filter(c => c.id !== contextId));
+    }
+  };
+
+  const handleTakeAction = (insight) => {
+    setSelectedInsight(insight);
+    setShowActionModal(true);
   };
 
   const handleSendMessage = async () => {
@@ -115,16 +127,40 @@ const ContextFlow = () => {
       const userMessage = { role: 'user', content: chatInput, timestamp: new Date() };
       setChatMessages([...chatMessages, userMessage]);
       setChatInput('');
-      
-      // Simulate AI response
-      setTimeout(() => {
+
+      try {
+        const response = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            messages: [...chatMessages, userMessage].map(m => ({
+              role: m.role,
+              content: m.content
+            })),
+            userContexts: contexts
+          })
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to get response');
+        }
+
+        const data = await response.json();
         const aiMessage = {
           role: 'assistant',
-          content: 'This is where ContextFlow would provide intelligent responses based on your entire context graph. In production, this connects to OpenAI API with your full context as system prompt.',
+          content: data.message,
           timestamp: new Date()
         };
         setChatMessages(prev => [...prev, aiMessage]);
-      }, 1000);
+      } catch (error) {
+        console.error('Error sending message:', error);
+        const errorMessage = {
+          role: 'assistant',
+          content: 'Sorry, I encountered an error. Please check your API key and try again.',
+          timestamp: new Date()
+        };
+        setChatMessages(prev => [...prev, errorMessage]);
+      }
     }
   };
 
@@ -164,7 +200,10 @@ const ContextFlow = () => {
         </div>
         <p className="text-zinc-400 text-sm mb-3">{insight.message}</p>
         {insight.actionable && (
-          <button className="text-xs text-blue-400 hover:text-blue-300 font-medium transition-colors">
+          <button
+            onClick={() => handleTakeAction(insight)}
+            className="text-xs text-blue-400 hover:text-blue-300 font-medium transition-colors"
+          >
             Take Action →
           </button>
         )}
@@ -180,7 +219,7 @@ const ContextFlow = () => {
     };
 
     return (
-      <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-5 hover:border-zinc-700 transition-all cursor-pointer">
+      <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-5 hover:border-zinc-700 transition-all">
         <div className="flex items-start justify-between mb-3">
           <div className="flex-1">
             <div className="flex items-center gap-2 mb-2">
@@ -191,6 +230,13 @@ const ContextFlow = () => {
             </div>
             <p className="text-zinc-400 text-sm">{context.summary}</p>
           </div>
+          <button
+            onClick={() => handleDeleteContext(context.id)}
+            className="text-zinc-500 hover:text-red-400 transition-colors ml-2"
+            title="Delete context"
+          >
+            <Trash2 size={16} />
+          </button>
         </div>
         <div className="flex items-center justify-between">
           <div className="flex flex-wrap gap-1.5">
@@ -257,10 +303,10 @@ const ContextFlow = () => {
           <div>
             {/* Stats */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-              <StatCard icon={Brain} label="Active Contexts" value={contexts.length} trend="+2 this week" />
-              <StatCard icon={Zap} label="Insights Generated" value="47" trend="+12 today" />
-              <StatCard icon={Calendar} label="Connections Made" value="156" trend="+8 this week" />
-              <StatCard icon={Clock} label="Avg Response Time" value="1.2s" trend="-0.3s faster" />
+              <StatCard icon={Brain} label="Active Contexts" value={contexts.length} />
+              <StatCard icon={Zap} label="Insights Generated" value={insights.length} />
+              <StatCard icon={Calendar} label="Connections Made" value={contexts.reduce((sum, c) => sum + c.connections.length, 0)} />
+              <StatCard icon={Clock} label="High Priority" value={contexts.filter(c => c.priority === 'high').length} />
             </div>
 
             {/* Recent Insights */}
@@ -277,9 +323,16 @@ const ContextFlow = () => {
                 </button>
               </div>
               <div className="space-y-3">
-                {insights.map(insight => (
-                  <InsightCard key={insight.id} insight={insight} />
-                ))}
+                {insights.length === 0 ? (
+                  <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-8 text-center">
+                    <Zap size={48} className="text-zinc-700 mx-auto mb-3" />
+                    <p className="text-zinc-500 mb-4">No insights yet. Add contexts to generate AI-powered insights.</p>
+                  </div>
+                ) : (
+                  insights.map(insight => (
+                    <InsightCard key={insight.id} insight={insight} />
+                  ))
+                )}
               </div>
             </div>
 
@@ -287,9 +340,16 @@ const ContextFlow = () => {
             <div>
               <h2 className="text-xl font-semibold mb-4">Priority Contexts</h2>
               <div className="space-y-3">
-                {contexts.filter(c => c.priority === 'high').map(context => (
-                  <ContextCard key={context.id} context={context} />
-                ))}
+                {contexts.filter(c => c.priority === 'high').length === 0 ? (
+                  <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-8 text-center">
+                    <Brain size={48} className="text-zinc-700 mx-auto mb-3" />
+                    <p className="text-zinc-500">No high priority contexts yet.</p>
+                  </div>
+                ) : (
+                  contexts.filter(c => c.priority === 'high').map(context => (
+                    <ContextCard key={context.id} context={context} />
+                  ))
+                )}
               </div>
             </div>
           </div>
@@ -299,13 +359,22 @@ const ContextFlow = () => {
           <div>
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-2xl font-bold">Context Library</h2>
-              <button
-                onClick={() => setShowAddContext(true)}
-                className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg font-medium flex items-center gap-2 transition-colors"
-              >
-                <Plus size={18} />
-                Add Context
-              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setShowUpload(true)}
+                  className="bg-zinc-800 hover:bg-zinc-700 px-4 py-2 rounded-lg font-medium flex items-center gap-2 transition-colors"
+                >
+                  <Upload size={18} />
+                  Import
+                </button>
+                <button
+                  onClick={() => setShowAddContext(true)}
+                  className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg font-medium flex items-center gap-2 transition-colors"
+                >
+                  <Plus size={18} />
+                  Add Context
+                </button>
+              </div>
             </div>
 
             {showAddContext && (
@@ -341,10 +410,57 @@ const ContextFlow = () => {
               </div>
             )}
 
+            {showUpload && (
+              <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-6 mb-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold">Import Contexts</h3>
+                  <button
+                    onClick={() => setShowUpload(false)}
+                    className="text-zinc-400 hover:text-white transition-colors"
+                  >
+                    <X size={20} />
+                  </button>
+                </div>
+                <p className="text-zinc-400 text-sm mb-4">
+                  Upload a JSON or CSV file with your contexts. CSV format: title,summary,type,priority
+                </p>
+                <input
+                  type="file"
+                  accept=".json,.csv"
+                  onChange={handleFileUpload}
+                  className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-3 text-white file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:bg-blue-600 file:text-white file:cursor-pointer hover:file:bg-blue-700"
+                />
+              </div>
+            )}
+
             <div className="space-y-3">
-              {contexts.map(context => (
-                <ContextCard key={context.id} context={context} />
-              ))}
+              {contexts.length === 0 ? (
+                <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-12 text-center">
+                  <Brain size={64} className="text-zinc-700 mx-auto mb-4" />
+                  <h3 className="text-xl font-semibold text-white mb-2">No Contexts Yet</h3>
+                  <p className="text-zinc-500 mb-6">Start by adding your first context or importing existing ones.</p>
+                  <div className="flex gap-2 justify-center">
+                    <button
+                      onClick={() => setShowUpload(true)}
+                      className="bg-zinc-800 hover:bg-zinc-700 px-6 py-2 rounded-lg font-medium flex items-center gap-2 transition-colors"
+                    >
+                      <Upload size={18} />
+                      Import File
+                    </button>
+                    <button
+                      onClick={() => setShowAddContext(true)}
+                      className="bg-blue-600 hover:bg-blue-700 px-6 py-2 rounded-lg font-medium flex items-center gap-2 transition-colors"
+                    >
+                      <Plus size={18} />
+                      Add Manually
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                contexts.map(context => (
+                  <ContextCard key={context.id} context={context} />
+                ))
+              )}
             </div>
           </div>
         )}
@@ -403,6 +519,68 @@ const ContextFlow = () => {
           </div>
         )}
       </main>
+
+      {/* Action Modal */}
+      {showActionModal && selectedInsight && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-6 max-w-lg w-full">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-xl font-semibold">Take Action</h3>
+              <button
+                onClick={() => setShowActionModal(false)}
+                className="text-zinc-400 hover:text-white transition-colors"
+              >
+                <X size={24} />
+              </button>
+            </div>
+            <div className="mb-6">
+              <h4 className="text-white font-medium mb-2">{selectedInsight.title}</h4>
+              <p className="text-zinc-400 text-sm">{selectedInsight.message}</p>
+            </div>
+            <div className="space-y-3">
+              <button
+                onClick={() => {
+                  // Create a new context from the insight
+                  const context = {
+                    id: Date.now(),
+                    type: 'action',
+                    title: `Action: ${selectedInsight.title}`,
+                    summary: selectedInsight.message,
+                    connections: [],
+                    lastUpdated: 'Just now',
+                    priority: 'high'
+                  };
+                  setContexts([context, ...contexts]);
+                  setShowActionModal(false);
+                  alert('Action added to contexts!');
+                }}
+                className="w-full bg-blue-600 hover:bg-blue-700 px-4 py-3 rounded-lg font-medium transition-colors"
+              >
+                Create Action Context
+              </button>
+              <button
+                onClick={() => {
+                  setActiveView('chat');
+                  setChatInput(`Help me with: ${selectedInsight.title}`);
+                  setShowActionModal(false);
+                }}
+                className="w-full bg-zinc-800 hover:bg-zinc-700 px-4 py-3 rounded-lg font-medium transition-colors"
+              >
+                Discuss in Chat
+              </button>
+              <button
+                onClick={() => {
+                  setInsights(insights.filter(i => i.id !== selectedInsight.id));
+                  setShowActionModal(false);
+                }}
+                className="w-full bg-zinc-800 hover:bg-zinc-700 text-red-400 px-4 py-3 rounded-lg font-medium transition-colors"
+              >
+                Dismiss Insight
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
