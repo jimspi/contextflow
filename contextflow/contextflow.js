@@ -1,7 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Brain, Zap, Calendar, MessageSquare, TrendingUp, Clock, Plus, X, Send, Upload, Trash2 } from 'lucide-react';
+import { Brain, Zap, Calendar, MessageSquare, TrendingUp, Clock, Plus, X, Send, Upload, Trash2, LogOut } from 'lucide-react';
+import { supabase } from './lib/supabase';
+import { useRouter } from 'next/router';
 
 const ContextFlow = () => {
+  const router = useRouter();
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
   const [activeView, setActiveView] = useState('dashboard');
   const [contexts, setContexts] = useState([]);
   const [insights, setInsights] = useState([]);
@@ -13,6 +18,84 @@ const ContextFlow = () => {
   const [showUpload, setShowUpload] = useState(false);
   const [selectedInsight, setSelectedInsight] = useState(null);
   const [showActionModal, setShowActionModal] = useState(false);
+
+  // Check authentication and load data
+  useEffect(() => {
+    checkUser();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+      if (!session?.user) {
+        router.push('/auth');
+      } else {
+        loadUserData(session.user.id);
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const checkUser = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      setUser(session?.user ?? null);
+      if (!session?.user) {
+        router.push('/auth');
+      } else {
+        await loadUserData(session.user.id);
+      }
+    } catch (error) {
+      console.error('Error checking user:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadUserData = async (userId) => {
+    try {
+      // Load contexts
+      const { data: contextsData, error: contextsError } = await supabase
+        .from('contexts')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false });
+
+      if (contextsError) throw contextsError;
+      if (contextsData) setContexts(contextsData);
+
+      // Load insights
+      const { data: insightsData, error: insightsError } = await supabase
+        .from('insights')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false });
+
+      if (insightsError) throw insightsError;
+      if (insightsData) setInsights(insightsData);
+    } catch (error) {
+      console.error('Error loading data:', error);
+    }
+  };
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    router.push('/auth');
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-black text-white flex items-center justify-center">
+        <div className="text-center">
+          <Brain size={64} className="text-blue-500 mx-auto mb-4 animate-pulse" />
+          <p className="text-zinc-500">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return null;
+  }
 
   // Generate AI insight using OpenAI API
   const generateInsight = async (context) => {
@@ -31,11 +114,20 @@ const ContextFlow = () => {
 
       const data = await response.json();
       const newInsight = {
-        id: Date.now(),
         ...data.insight,
+        user_id: user.id,
         timestamp: 'Just now'
       };
-      setInsights([newInsight, ...insights]);
+
+      // Save to Supabase
+      const { data: savedInsight, error: saveError } = await supabase
+        .from('insights')
+        .insert([newInsight])
+        .select()
+        .single();
+
+      if (saveError) throw saveError;
+      setInsights([savedInsight, ...insights]);
     } catch (error) {
       console.error('Error generating insight:', error);
       alert('Failed to generate insight. Please check your API key and try again.');
@@ -44,32 +136,56 @@ const ContextFlow = () => {
     }
   };
 
-  const handleAddContext = () => {
+  const handleAddContext = async () => {
     if (newContext.title.trim()) {
       const context = {
-        id: Date.now(),
+        user_id: user.id,
         type: newContext.type || 'custom',
         title: newContext.title,
         summary: newContext.description,
         connections: [],
-        lastUpdated: 'Just now',
+        last_updated: new Date().toISOString(),
         priority: newContext.priority || 'medium'
       };
-      setContexts([context, ...contexts]);
-      setNewContext({ title: '', description: '', type: 'custom', priority: 'medium' });
-      setShowAddContext(false);
-      generateInsight(context);
+
+      try {
+        // Save to Supabase
+        const { data: savedContext, error } = await supabase
+          .from('contexts')
+          .insert([context])
+          .select()
+          .single();
+
+        if (error) throw error;
+
+        setContexts([savedContext, ...contexts]);
+        setNewContext({ title: '', description: '', type: 'custom', priority: 'medium' });
+        setShowAddContext(false);
+        generateInsight(savedContext);
+      } catch (error) {
+        console.error('Error adding context:', error);
+        alert('Failed to add context. Please try again.');
+      }
     }
   };
 
   const handleFileUpload = async (event) => {
-    const file = event.target.files[0];
-    if (!file) return;
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
 
-    const reader = new FileReader();
-    reader.onload = async (e) => {
+    let allContexts = [];
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+
       try {
-        const content = e.target.result;
+        const content = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = (e) => resolve(e.target.result);
+          reader.onerror = reject;
+          reader.readAsText(file);
+        });
+
         let data;
 
         if (file.name.endsWith('.json')) {
@@ -77,43 +193,74 @@ const ContextFlow = () => {
         } else if (file.name.endsWith('.csv')) {
           // Simple CSV parsing for contexts
           const lines = content.split('\n');
-          data = lines.slice(1).filter(line => line.trim()).map((line, idx) => {
+          data = lines.slice(1).filter(line => line.trim()).map((line) => {
             const [title, summary, type, priority] = line.split(',').map(s => s.trim());
             return {
-              id: Date.now() + idx,
               title: title || 'Untitled',
               summary: summary || '',
               type: type || 'custom',
               priority: priority || 'medium',
               connections: [],
-              lastUpdated: 'Just now'
             };
           });
         } else {
-          alert('Please upload a JSON or CSV file');
-          return;
+          continue; // Skip non-JSON/CSV files
         }
 
         // Add uploaded contexts
         const newContexts = Array.isArray(data) ? data : [data];
-        setContexts([...newContexts.map((ctx, idx) => ({
-          ...ctx,
-          id: Date.now() + idx,
-          lastUpdated: 'Just now'
-        })), ...contexts]);
-        setShowUpload(false);
-        alert(`Successfully imported ${newContexts.length} context(s)`);
+        allContexts = [...allContexts, ...newContexts];
       } catch (error) {
-        console.error('Error parsing file:', error);
-        alert('Failed to parse file. Please check the format.');
+        console.error(`Error parsing file ${file.name}:`, error);
       }
-    };
-    reader.readAsText(file);
+    }
+
+    if (allContexts.length > 0) {
+      try {
+        // Save all contexts to Supabase
+        const contextsToInsert = allContexts.map(ctx => ({
+          ...ctx,
+          user_id: user.id,
+          last_updated: new Date().toISOString()
+        }));
+
+        const { data: savedContexts, error } = await supabase
+          .from('contexts')
+          .insert(contextsToInsert)
+          .select();
+
+        if (error) throw error;
+
+        setContexts([...savedContexts, ...contexts]);
+        setShowUpload(false);
+        alert(`Successfully imported ${savedContexts.length} context(s)`);
+
+        // Clear the file input
+        event.target.value = '';
+      } catch (error) {
+        console.error('Error saving contexts:', error);
+        alert('Failed to save contexts to database. Please try again.');
+      }
+    } else {
+      alert('No valid files found. Please upload JSON or CSV files.');
+    }
   };
 
-  const handleDeleteContext = (contextId) => {
+  const handleDeleteContext = async (contextId) => {
     if (confirm('Are you sure you want to delete this context?')) {
-      setContexts(contexts.filter(c => c.id !== contextId));
+      try {
+        const { error } = await supabase
+          .from('contexts')
+          .delete()
+          .eq('id', contextId);
+
+        if (error) throw error;
+
+        setContexts(contexts.filter(c => c.id !== contextId));
+      } catch (error) {
+        console.error('Error deleting context:', error);
+        alert('Failed to delete context. Please try again.');
+      }
     }
   };
 
@@ -267,32 +414,42 @@ const ContextFlow = () => {
                 <p className="text-xs text-zinc-500">Personal AI Memory Layer</p>
               </div>
             </div>
-            <nav className="flex items-center gap-1">
+            <div className="flex items-center gap-4">
+              <nav className="flex items-center gap-1">
+                <button
+                  onClick={() => setActiveView('dashboard')}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    activeView === 'dashboard' ? 'bg-zinc-800 text-white' : 'text-zinc-400 hover:text-white'
+                  }`}
+                >
+                  Dashboard
+                </button>
+                <button
+                  onClick={() => setActiveView('contexts')}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    activeView === 'contexts' ? 'bg-zinc-800 text-white' : 'text-zinc-400 hover:text-white'
+                  }`}
+                >
+                  Contexts
+                </button>
+                <button
+                  onClick={() => setActiveView('chat')}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    activeView === 'chat' ? 'bg-zinc-800 text-white' : 'text-zinc-400 hover:text-white'
+                  }`}
+                >
+                  Chat
+                </button>
+              </nav>
+              <div className="border-l border-zinc-800 h-6"></div>
               <button
-                onClick={() => setActiveView('dashboard')}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  activeView === 'dashboard' ? 'bg-zinc-800 text-white' : 'text-zinc-400 hover:text-white'
-                }`}
+                onClick={handleSignOut}
+                className="text-zinc-400 hover:text-white transition-colors flex items-center gap-2"
+                title="Sign out"
               >
-                Dashboard
+                <LogOut size={18} />
               </button>
-              <button
-                onClick={() => setActiveView('contexts')}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  activeView === 'contexts' ? 'bg-zinc-800 text-white' : 'text-zinc-400 hover:text-white'
-                }`}
-              >
-                Contexts
-              </button>
-              <button
-                onClick={() => setActiveView('chat')}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  activeView === 'chat' ? 'bg-zinc-800 text-white' : 'text-zinc-400 hover:text-white'
-                }`}
-              >
-                Chat
-              </button>
-            </nav>
+            </div>
           </div>
         </div>
       </header>
@@ -422,11 +579,14 @@ const ContextFlow = () => {
                   </button>
                 </div>
                 <p className="text-zinc-400 text-sm mb-4">
-                  Upload a JSON or CSV file with your contexts. CSV format: title,summary,type,priority
+                  Upload JSON or CSV files with your contexts. You can select multiple files at once.
+                  <br />
+                  CSV format: title,summary,type,priority
                 </p>
                 <input
                   type="file"
                   accept=".json,.csv"
+                  multiple
                   onChange={handleFileUpload}
                   className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-3 text-white file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:bg-blue-600 file:text-white file:cursor-pointer hover:file:bg-blue-700"
                 />
