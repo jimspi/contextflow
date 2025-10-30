@@ -1,5 +1,3 @@
-'use client';
-
 import React, { useState, useEffect } from 'react';
 import { Brain, Zap, Calendar, MessageSquare, TrendingUp, Clock, Plus, X, Send } from 'lucide-react';
 
