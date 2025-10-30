@@ -155,20 +155,27 @@ const Recall = () => {
   const generateDailySummary = async () => {
     if (isDailySummaryGenerating) return;
 
-    // Get today's notes
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    console.log('[DAILY SUMMARY] Starting generation...');
+    console.log('[DAILY SUMMARY] Total notes:', notes.length);
+
+    // Get today's notes - use a more lenient time window (last 24 hours)
+    const oneDayAgo = new Date();
+    oneDayAgo.setHours(oneDayAgo.getHours() - 24);
 
     const todaysNotes = notes.filter(note => {
       const noteDate = new Date(note.created_at || note.last_updated);
-      noteDate.setHours(0, 0, 0, 0);
-      return noteDate.getTime() === today.getTime();
+      const isToday = noteDate >= oneDayAgo;
+      console.log('[DAILY SUMMARY] Note:', note.title, 'Date:', noteDate, 'Is recent:', isToday);
+      return isToday;
     });
+
+    console.log('[DAILY SUMMARY] Notes from last 24h:', todaysNotes.length);
 
     // If no notes today, show special message
     if (todaysNotes.length === 0) {
+      console.log('[DAILY SUMMARY] No recent notes found');
       setDailySummary({
-        summary: "No new notes today",
+        summary: "No new notes in the last 24 hours",
         noteCount: 0,
         isEmpty: true
       });
@@ -195,7 +202,7 @@ ${notesText}
 
 Provide a concise but insightful 3-4 sentence summary that adds real value.`;
 
-      console.log('Generating daily summary with prompt:', prompt);
+      console.log('[DAILY SUMMARY] Calling API with prompt:', prompt);
 
       const response = await fetch('/api/chat', {
         method: 'POST',
@@ -209,15 +216,23 @@ Provide a concise but insightful 3-4 sentence summary that adds real value.`;
         })
       });
 
+      console.log('[DAILY SUMMARY] API response status:', response.status);
+
       if (!response.ok) {
         const errorText = await response.text();
-        console.error('Daily summary API error:', response.status, errorText);
+        console.error('[DAILY SUMMARY] API error:', response.status, errorText);
         throw new Error(`API returned ${response.status}: ${errorText}`);
       }
 
       const data = await response.json();
+      console.log('[DAILY SUMMARY] API response data:', data);
 
-      console.log('Daily summary generated successfully:', data);
+      if (!data.response) {
+        console.error('[DAILY SUMMARY] No response field in API data:', data);
+        throw new Error('API response missing "response" field');
+      }
+
+      console.log('[DAILY SUMMARY] Successfully generated summary:', data.response);
 
       setDailySummary({
         summary: data.response,
@@ -225,10 +240,11 @@ Provide a concise but insightful 3-4 sentence summary that adds real value.`;
         isEmpty: false
       });
     } catch (error) {
-      console.error('Error generating daily summary:', error);
+      console.error('[DAILY SUMMARY] Error:', error);
+      console.error('[DAILY SUMMARY] Error stack:', error.stack);
       // Show error state instead of useless fallback
       setDailySummary({
-        summary: `Failed to generate AI summary. Please check your OpenAI API key is configured correctly. Error: ${error.message}`,
+        summary: `Failed to generate AI summary. Error: ${error.message}. Check console for details and verify your OpenAI API key is configured.`,
         noteCount: todaysNotes.length,
         isEmpty: false,
         isError: true
@@ -238,12 +254,17 @@ Provide a concise but insightful 3-4 sentence summary that adds real value.`;
     }
   };
 
-  // Auto-generate daily summary when notes change
+  // Auto-generate daily summary when notes change or user logs in
   useEffect(() => {
-    if (notes.length > 0 && user) {
-      generateDailySummary();
+    if (notes.length > 0 && user && !isDailySummaryGenerating) {
+      console.log('[DAILY SUMMARY] useEffect triggered - regenerating summary');
+      // Use setTimeout to debounce and avoid infinite loops
+      const timer = setTimeout(() => {
+        generateDailySummary();
+      }, 500);
+      return () => clearTimeout(timer);
     }
-  }, [notes.length]);
+  }, [notes.length, user]); // Only trigger on length change or user change, not every render
 
   const handleAddNote = async () => {
     if (newNote.title.trim()) {
