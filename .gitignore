@@ -1,0 +1,4 @@
+# Dependencies installed in root (should be in contextflow/ subdirectory)
+/node_modules/
+/package-lock.json
+/package.json
