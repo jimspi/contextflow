@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import Head from 'next/head';
 import { supabase } from '../lib/supabase';
-import { Brain, Mail, Lock, User, AlertCircle } from 'lucide-react';
+import { Brain, Mail, Lock, User, AlertCircle, Zap, MessageSquare, Sparkles } from 'lucide-react';
 import { useRouter } from 'next/router';
 
 export default function Auth() {
@@ -70,7 +70,33 @@ export default function Auth() {
               <Brain size={32} />
             </div>
             <h1 className="text-3xl font-bold mb-2">ContextFlow</h1>
-            <p className="text-zinc-500">Personal AI Memory Layer</p>
+            <p className="text-zinc-500 text-lg mb-6">Your AI-Powered Second Brain</p>
+
+            {/* Value Proposition */}
+            <div className="grid grid-cols-3 gap-4 mb-6">
+              <div className="text-center">
+                <div className="bg-zinc-900 p-3 rounded-lg mb-2 inline-block">
+                  <Brain size={24} className="text-blue-400" />
+                </div>
+                <p className="text-xs text-zinc-400">Add your notes & ideas</p>
+              </div>
+              <div className="text-center">
+                <div className="bg-zinc-900 p-3 rounded-lg mb-2 inline-block">
+                  <Zap size={24} className="text-amber-400" />
+                </div>
+                <p className="text-xs text-zinc-400">AI generates insights</p>
+              </div>
+              <div className="text-center">
+                <div className="bg-zinc-900 p-3 rounded-lg mb-2 inline-block">
+                  <MessageSquare size={24} className="text-emerald-400" />
+                </div>
+                <p className="text-xs text-zinc-400">Chat with your AI</p>
+              </div>
+            </div>
+
+            <p className="text-sm text-zinc-500">
+              Never forget important things again. ContextFlow uses AI to help you remember, connect, and act on what matters.
+            </p>
           </div>
 
           {/* Auth Form */}
