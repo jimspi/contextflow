@@ -327,9 +327,9 @@ Provide a concise but insightful 3-4 sentence summary that adds real value.`;
         user_id: user.id,
         type: newNote.type || 'custom',
         title: newNote.title,
-        summary: newNote.description,
-        connections: [],
-        last_updated: new Date().toISOString(),
+        summary: newNote.description || '',
+        // Omit connections - let database use default TEXT[] value
+        // Omit last_updated - let database trigger set it
         priority: newNote.priority || 'medium'
       };
 
@@ -368,9 +368,9 @@ Provide a concise but insightful 3-4 sentence summary that adds real value.`;
           .from('contexts')
           .update({
             title: editingNote.title,
-            summary: editingNote.summary,
-            priority: editingNote.priority,
-            last_updated: new Date().toISOString()
+            summary: editingNote.summary || '',
+            priority: editingNote.priority
+            // Omit last_updated - database trigger will set it automatically
           })
           .eq('id', editingNote.id);
 
@@ -438,12 +438,12 @@ Provide a concise but insightful 3-4 sentence summary that adds real value.`;
 
         const notesToInsert = allNotes.map(note => ({
           title: note.title,
-          summary: note.summary,
+          summary: note.summary || '', // Ensure summary is never null
           type: note.type,
           priority: note.priority,
-          connections: [], // Empty array for JSONB field
-          user_id: user.id,
-          last_updated: new Date().toISOString()
+          // Omit connections - let database use default TEXT[] value
+          user_id: user.id
+          // Omit last_updated - let database trigger set it
         }));
 
         console.log('[FILE UPLOAD] Notes to insert:', JSON.stringify(notesToInsert, null, 2));
