@@ -434,18 +434,36 @@ Provide a concise but insightful 3-4 sentence summary that adds real value.`;
     // Save all successfully processed notes
     if (allNotes.length > 0) {
       try {
+        console.log('[FILE UPLOAD] Preparing to save notes to database:', allNotes);
+
         const notesToInsert = allNotes.map(note => ({
-          ...note,
+          title: note.title,
+          summary: note.summary,
+          type: note.type,
+          priority: note.priority,
+          connections: [], // Empty array for JSONB field
           user_id: user.id,
           last_updated: new Date().toISOString()
         }));
+
+        console.log('[FILE UPLOAD] Notes to insert:', JSON.stringify(notesToInsert, null, 2));
 
         const { data: savedNotes, error } = await supabase
           .from('contexts')
           .insert(notesToInsert)
           .select();
 
-        if (error) throw error;
+        if (error) {
+          console.error('[FILE UPLOAD] Supabase error details:', {
+            message: error.message,
+            details: error.details,
+            hint: error.hint,
+            code: error.code
+          });
+          throw error;
+        }
+
+        console.log('[FILE UPLOAD] Successfully saved notes:', savedNotes);
 
         setNotes([...savedNotes, ...notes]);
         setShowUpload(false);
@@ -459,8 +477,8 @@ Provide a concise but insightful 3-4 sentence summary that adds real value.`;
         }
         showToast(message, 'success');
       } catch (error) {
-        console.error('Error saving notes:', error);
-        showToast('Failed to save notes to database.', 'error');
+        console.error('[FILE UPLOAD] Error saving notes to database:', error);
+        showToast(`Failed to save notes. Error: ${error.message || 'Unknown error'}`, 'error');
       }
     } else {
       const errorDetails = errors.map(e => `${e.fileName}: ${e.error}`).join('; ');

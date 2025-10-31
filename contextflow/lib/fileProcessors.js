@@ -62,6 +62,7 @@ export async function processFile(file) {
 
   // For binary files (Word, PDF, Images), send to server
   if (['docx', 'pdf', 'jpg', 'jpeg', 'png'].includes(fileExtension)) {
+    console.log('[FILE PROCESSOR] Processing binary file:', fileName, 'extension:', fileExtension);
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
 
@@ -69,7 +70,9 @@ export async function processFile(file) {
         try {
           // Convert to base64 for sending to server
           const base64Data = e.target.result.split(',')[1];
+          console.log('[FILE PROCESSOR] Converted to base64, length:', base64Data.length);
 
+          console.log('[FILE PROCESSOR] Sending to /api/process-file...');
           const response = await fetch('/api/process-file', {
             method: 'POST',
             headers: {
@@ -82,19 +85,33 @@ export async function processFile(file) {
             })
           });
 
+          console.log('[FILE PROCESSOR] API response status:', response.status);
+
           if (!response.ok) {
             const errorData = await response.json();
+            console.error('[FILE PROCESSOR] API error:', errorData);
             throw new Error(errorData.error || 'Failed to process file');
           }
 
           const data = await response.json();
+          console.log('[FILE PROCESSOR] API returned data:', data);
+
+          if (!data.result) {
+            throw new Error('API response missing result field');
+          }
+
+          console.log('[FILE PROCESSOR] Successfully processed file:', data.result);
           resolve(data.result);
         } catch (error) {
+          console.error('[FILE PROCESSOR] Error processing file:', error);
           reject(error);
         }
       };
 
-      reader.onerror = () => reject(new Error('Failed to read file'));
+      reader.onerror = () => {
+        console.error('[FILE PROCESSOR] FileReader error');
+        reject(new Error('Failed to read file'));
+      };
       reader.readAsDataURL(file);
     });
   }
